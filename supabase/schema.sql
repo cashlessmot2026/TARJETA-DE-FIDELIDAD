@@ -11,8 +11,12 @@ create table if not exists public.customers (
   name text not null,
   phone text,
   stars int not null default 0,
+  nfc_uid text,                                              -- número de serie de la etiqueta NFC asignada
   created_at timestamptz not null default now()
 );
+alter table public.customers add column if not exists nfc_uid text;
+alter table public.customers add column if not exists bonus_days int not null default 0;  -- días de regalo disponibles
+create unique index if not exists customers_nfc_uid_idx on public.customers(nfc_uid) where nfc_uid is not null;
 
 create table if not exists public.visits (
   id bigint generated always as identity primary key,
@@ -94,7 +98,7 @@ begin
   select * into v from customers where token = p_token;
   if not found then return null; end if;
   return json_build_object(
-    'name', v.name, 'code', v.code, 'stars', v.stars,
+    'name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days,
     'since', v.created_at,
     'goal', _setting('goal')::int,
     'business', _setting('business_name'),
@@ -142,7 +146,7 @@ returns json language plpgsql security definer set search_path = public, extensi
 begin
   perform _require_admin(p_pin);
   return coalesce((select json_agg(c) from (
-    select id, code, name, phone, stars, created_at,
+    select id, code, name, phone, stars, bonus_days, created_at, nfc_uid,
       (select max(created_at) from visits v where v.customer_id = customers.id) as last_visit
     from customers order by stars desc, created_at desc) c), '[]'::json);
 end $$;
@@ -153,7 +157,7 @@ returns json language plpgsql security definer set search_path = public, extensi
 declare v customers; last_at timestamptz;
 begin
   perform _require_admin(p_pin);
-  select * into v from customers where code = upper(trim(p_code)) or id::text = trim(p_code);
+  select * into v from customers where code = upper(trim(p_code)) or id::text = trim(p_code) or nfc_uid = upper(trim(p_code));
   if not found then raise exception 'Tarjeta no encontrada'; end if;
   if p_kind in ('scan','nfc') then
     select max(created_at) into last_at from visits where customer_id = v.id and kind in ('scan','nfc');
@@ -180,6 +184,61 @@ begin
   update customers set stars = stars - pr.stars_required where id = v.id returning * into v;
   insert into visits(customer_id, delta, kind, note) values (v.id, -pr.stars_required, 'redeem', pr.title);
   return json_build_object('name', v.name, 'stars', v.stars, 'promo', pr.title);
+end $$;
+
+create or replace function public.admin_assign_nfc(p_pin text, p_code text, p_uid text)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers; u text := nullif(upper(trim(p_uid)), '');
+begin
+  perform _require_admin(p_pin);
+  select * into v from customers where code = upper(trim(p_code));
+  if not found then raise exception 'Cliente no encontrado'; end if;
+  if u is not null and exists (select 1 from customers where nfc_uid = u and id <> v.id) then
+    raise exception 'Esa etiqueta ya está asignada a otro cliente';
+  end if;
+  update customers set nfc_uid = u where id = v.id;
+  return json_build_object('name', v.name, 'nfc_uid', u);
+end $$;
+
+-- Gimnasio: pago de 7 días regala 1; pago de 14 días regala 2. 1 estrella = 1 día pagado.
+create or replace function public.admin_lookup(p_pin text, p_code text)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers;
+begin
+  perform _require_admin(p_pin);
+  select * into v from customers
+   where code = upper(trim(p_code)) or nfc_uid = upper(trim(p_code)) or id::text = trim(p_code);
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days);
+end $$;
+
+create or replace function public.admin_register_payment(p_pin text, p_code text, p_days int)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers; gift int;
+begin
+  perform _require_admin(p_pin);
+  if p_days not in (7, 14) then raise exception 'Plan no válido'; end if;
+  gift := p_days / 7;
+  select * into v from customers where code = upper(trim(p_code));
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  update customers set stars = stars + p_days, bonus_days = bonus_days + gift
+   where id = v.id returning * into v;
+  insert into visits(customer_id, delta, kind, note)
+  values (v.id, p_days, 'payment', p_days || ' días pagados + ' || gift || ' de regalo');
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days, 'paid', p_days, 'gift', gift);
+end $$;
+
+create or replace function public.admin_use_bonus_day(p_pin text, p_code text)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers;
+begin
+  perform _require_admin(p_pin);
+  select * into v from customers where code = upper(trim(p_code));
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  if v.bonus_days < 1 then raise exception 'No tiene días de regalo'; end if;
+  update customers set bonus_days = bonus_days - 1 where id = v.id returning * into v;
+  insert into visits(customer_id, delta, kind, note) values (v.id, 0, 'bonus', 'Día de regalo usado');
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days);
 end $$;
 
 create or replace function public.admin_promos(p_pin text)
@@ -229,6 +288,7 @@ grant execute on function
   public.app_register(text, text), public.app_get_card(uuid),
   public.admin_check(text), public.admin_overview(text), public.admin_customers(text),
   public.admin_add_stars(text, text, int, text, text), public.admin_redeem(text, text, uuid),
-  public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
+  public.admin_assign_nfc(text, text, text), public.admin_lookup(text, text),
+  public.admin_register_payment(text, text, int), public.admin_use_bonus_day(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
   public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
 to anon, authenticated;

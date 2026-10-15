@@ -71,11 +71,29 @@ export function useNfcReader(onCode, enabled) {
           if (code) return cb.current(code)
         } catch {}
       }
+      // Etiqueta sin código nuestro: se usa su número de serie (asignado desde Clientes).
+      if (e.serialNumber) return cb.current(e.serialNumber.toUpperCase())
       setState('unknown')
     }
     return () => ctrl.abort()
   }, [enabled])
   return state
+}
+
+/** Espera una etiqueta, devuelve su número de serie y (si se puede) le graba el código. */
+export async function assignTag(code, signal) {
+  const r = new window.NDEFReader()
+  const uid = await new Promise((resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(new Error('cancelado')))
+    r.onreading = (e) => resolve(e.serialNumber)
+    r.onreadingerror = () => reject(new Error('No se pudo leer la etiqueta'))
+    r.scan({ signal }).catch(reject)
+  })
+  if (!uid) throw new Error('La etiqueta no entrega número de serie')
+  let written = true
+  try { await new window.NDEFReader().write({ records: [{ recordType: 'text', data: `FID:${code}` }] }, { overwrite: true, signal }) }
+  catch { written = false }
+  return { uid: uid.toUpperCase(), written }
 }
 
 export async function writeNfc(code) {

@@ -110,6 +110,12 @@ function Wallet({ token, onReset }) {
       </p>
 
       <section className="panel">
+        <h2>Días de regalo</h2>
+        <p className="muted">Paga 7 días y recibe 1 de regalo; paga 14 y recibe 2.</p>
+        <p><b>{card.bonus_days || 0}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}</p>
+      </section>
+
+      <section className="panel">
         <h2>Premios</h2>
         {card.promos.length === 0 && <p className="muted">El negocio aún no publicó premios.</p>}
         <ul className="promos">

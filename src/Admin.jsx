@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './supabase.js'
-import { QrScanner, useNfcReader, parseCode } from './Scanner.jsx'
+import { QrScanner, useNfcReader, parseCode, assignTag, nfcSupported } from './Scanner.jsx'
 
 const PIN_KEY = 'fid_admin_pin'
 const getPin = () => { try { return sessionStorage.getItem(PIN_KEY) } catch { return null } }
@@ -115,21 +115,44 @@ function Clientes({ pin }) {
     catch (e) { alert(e.message) }
     setBusy(null)
   }
+  const [asg, setAsg] = useState(null) // cliente esperando etiqueta
+  const [asgMsg, setAsgMsg] = useState('')
+  useEffect(() => {
+    if (!asg) return
+    const ctrl = new AbortController()
+    setAsgMsg('')
+    assignTag(asg.code, ctrl.signal)
+      .then(async ({ uid, written }) => {
+        await rpc('admin_assign_nfc', { p_pin: pin, p_code: asg.code, p_uid: uid })
+        setAsgMsg(`Etiqueta ${uid} asignada a ${asg.name}${written ? '' : ' (solo por número de serie)'}.`)
+        setAsg(null); reload()
+      })
+      .catch((e) => { if (!ctrl.signal.aborted) { setAsgMsg(e.message || 'No se pudo asignar'); setAsg(null) } })
+    return () => ctrl.abort()
+  }, [asg, pin, reload])
+  const unassign = async (c) => { try { await rpc('admin_assign_nfc', { p_pin: pin, p_code: c.code, p_uid: '' }); reload() } catch (e) { alert(e.message) } }
   const rows = (list || []).filter((c) => (c.name + c.code + (c.phone || '')).toLowerCase().includes(q.toLowerCase()))
   return (
     <>
       <h1 className="h1">Clientes</h1>
       <input className="search" placeholder="Buscar por nombre, teléfono o código" value={q} onChange={(e) => setQ(e.target.value)} />
       {err && <p className="err">{err}</p>}
+      {asg && <p className="muted" role="status">Acerca una etiqueta o tarjeta NFC al teléfono para asignarla a {asg.name}… <button className="link" onClick={() => setAsg(null)}>Cancelar</button></p>}
+      {asgMsg && <p className="muted" role="status">{asgMsg}</p>}
+      {!nfcSupported() && <p className="muted">Para asignar NFC abre el panel en Chrome para Android.</p>}
       <div className="panel table">
         {list && rows.length === 0 && <p className="muted">No hay clientes que coincidan.</p>}
         {rows.map((c) => (
           <div className="trow" key={c.id}>
-            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}</span></div>
+            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.nfc_uid ? ' · NFC ✓' : ''}</span></div>
+            <div className="actions">
+              <button className="link" disabled={!nfcSupported() || !!asg} onClick={() => setAsg(c)}>{c.nfc_uid ? 'Reasignar NFC' : 'Asignar NFC'}</button>
+              {c.nfc_uid && <button className="link danger" onClick={() => unassign(c)}>Quitar NFC</button>}
+            </div>
             <time>{c.last_visit ? `Última visita ${when(c.last_visit)}` : 'Sin visitas'}</time>
             <div className="stepper">
               <button disabled={busy === c.id || c.stars < 1} onClick={() => adj(c, -1)} aria-label={`Quitar una estrella a ${c.name}`}>−</button>
-              <b>{c.stars} ★</b>
+              <b>{c.stars} d · {c.bonus_days} 🎁</b>
               <button disabled={busy === c.id} onClick={() => adj(c, 1)} aria-label={`Dar una estrella a ${c.name}`}>+</button>
             </div>
           </div>
@@ -185,23 +208,19 @@ function Validar({ pin }) {
   const [mode, setMode] = useState('qr')
   const [manual, setManual] = useState('')
   const [res, setRes] = useState(null)
-  const [promos, setPromos] = useState([])
-  useEffect(() => { rpc('admin_promos', { p_pin: pin }).then(setPromos).catch(() => {}) }, [pin])
 
-  const validate = useCallback(async (code, kind) => {
-    try {
-      const r = await rpc('admin_add_stars', { p_pin: pin, p_code: code, p_delta: 1, p_kind: kind, p_note: null })
-      setRes({ ok: true, ...r })
-      navigator.vibrate?.(80)
-    } catch (e) { setRes({ ok: false, msg: e.message }) }
+  const find = useCallback(async (code) => {
+    try { setRes({ ok: true, ...(await rpc('admin_lookup', { p_pin: pin, p_code: code })) }); navigator.vibrate?.(80) }
+    catch (e) { setRes({ ok: false, msg: e.message }) }
   }, [pin])
 
-  const nfc = useNfcReader((c) => validate(c, 'nfc'), mode === 'nfc')
-  const redeem = async (pr) => {
-    try { const r = await rpc('admin_redeem', { p_pin: pin, p_code: res.code, p_promo: pr.id }); setRes({ ok: true, redeemed: true, ...r, code: res.code }) }
+  const nfc = useNfcReader((c) => find(c), mode === 'nfc')
+  const act = async (fn, args, note) => {
+    try { const r = await rpc(fn, { p_pin: pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
     catch (e) { setRes({ ok: false, msg: e.message }) }
   }
-  const eligible = res?.ok && !res.redeemed ? promos.filter((p) => p.active && p.stars_required <= res.stars) : []
+  const pay = (days) => act('admin_register_payment', { p_days: days }, (r) => `Pago de ${r.paid} días registrado. Regalo: +${r.gift} ${r.gift === 1 ? 'día' : 'días'}.`)
+  const useGift = () => act('admin_use_bonus_day', {}, () => 'Día de regalo aplicado.')
 
   return (
     <>
@@ -211,7 +230,7 @@ function Validar({ pin }) {
           <button key={k} role="tab" aria-selected={mode === k} className={mode === k ? 'on' : ''} onClick={() => { setMode(k); setRes(null) }}>{l}</button>)}
       </div>
       <div className="panel">
-        {mode === 'qr' && <QrScanner active onCode={(c) => validate(c, 'scan')} />}
+        {mode === 'qr' && <QrScanner active onCode={find} />}
         {mode === 'nfc' && (
           <div className="nfc">
             <div className={`pulse ${nfc === 'listening' ? 'live' : ''}`} aria-hidden />
@@ -219,14 +238,14 @@ function Validar({ pin }) {
               {nfc === 'unsupported' && 'Este dispositivo no admite NFC en el navegador. Usa Chrome en Android o escanea el QR.'}
               {nfc === 'denied' && 'Permiso de NFC denegado. Actívalo en los ajustes del sitio.'}
               {nfc === 'unknown' && 'La etiqueta no tiene una tarjeta válida.'}
-              {(nfc === 'idle' || nfc === 'listening') && 'Acerca el teléfono del cliente o su etiqueta NFC.'}
+              {(nfc === 'idle' || nfc === 'listening') && 'Acerca la etiqueta NFC del cliente.'}
             </p>
           </div>
         )}
         {mode === 'code' && (
-          <form className="form inline" onSubmit={(e) => { e.preventDefault(); const c = parseCode(manual) || manual.trim().toUpperCase(); if (c) validate(c, 'manual'); setManual('') }}>
+          <form className="form inline" onSubmit={(e) => { e.preventDefault(); const c = parseCode(manual) || manual.trim().toUpperCase(); if (c) find(c); setManual('') }}>
             <label>Código de tarjeta<input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="A1B2C3D4" maxLength={12} /></label>
-            <button className="btn primary">Sumar estrella</button>
+            <button className="btn primary">Buscar</button>
           </form>
         )}
       </div>
@@ -237,15 +256,14 @@ function Validar({ pin }) {
             <>
               <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" className="ring" /><path d="M38 62l15 15 30-34" className="tick" /></svg>
               <div>
-                <b>{res.redeemed ? `Canjeado: ${res.promo}` : `+1 estrella para ${res.name}`}</b>
-                <span>Ahora tiene {res.stars} ★</span>
-                {eligible.length > 0 && (
-                  <div className="actions">
-                    {eligible.map((p) => (
-                      <button key={p.id} className="btn" onClick={() => redeem(p)}>Canjear «{p.title}» ({p.stars_required} ★)</button>
-                    ))}
-                  </div>
-                )}
+                <b>{res.name}</b>
+                <span>{res.note || 'Elige el pago que hizo el cliente.'}</span>
+                <span>{res.stars} días pagados · {res.bonus_days} de regalo disponibles</span>
+                <div className="actions">
+                  <button className="btn primary" onClick={() => pay(7)}>Pagó 7 días (+1 regalo)</button>
+                  <button className="btn primary" onClick={() => pay(14)}>Pagó 14 días (+2 regalo)</button>
+                  <button className="btn" disabled={res.bonus_days < 1} onClick={useGift}>Usar día de regalo</button>
+                </div>
               </div>
             </>
           ) : <div><b>No se pudo validar</b><span>{res.msg}</span></div>}
