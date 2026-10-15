@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { rpc } from './supabase.js'
+import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
 import { nfcSupported, writeNfc } from './Scanner.jsx'
 
@@ -59,6 +59,9 @@ function Wallet({ token, onReset }) {
         navigator.vibrate?.([60, 40, 120])
         setTimeout(() => setStamped(false), 2800)
       }
+      if (prev.current !== null && c.stars !== prev.current) {
+        supabase.functions.invoke('wallet-pass', { body: { token, action: 'sync' } }).catch(() => {})
+      }
       prev.current = c.stars
       setCard(c)
     } catch {}
@@ -81,6 +84,12 @@ function Wallet({ token, onReset }) {
       if (navigator.share) await navigator.share({ title: card.business, url: link })
       else { await navigator.clipboard.writeText(link); setMsg('Enlace copiado. Ábrelo en otro dispositivo para ver tu tarjeta.') }
     } catch {}
+  }
+  const gwallet = async () => {
+    setMsg('Preparando tu tarjeta…')
+    const { data, error } = await supabase.functions.invoke('wallet-pass', { body: { token, action: 'save' } })
+    if (error || !data?.url) return setMsg('Google Wallet aún no está disponible. Usa el enlace por ahora.')
+    window.location.href = data.url
   }
   const nfc = async () => {
     try { setMsg('Acerca una etiqueta NFC al teléfono…'); await writeNfc(card.code); setMsg('Etiqueta NFC grabada.') }
@@ -120,6 +129,7 @@ function Wallet({ token, onReset }) {
         <h2>Guardar en el teléfono</h2>
         <p className="muted">Guarda el enlace en tu pantalla de inicio (menú del navegador → «Agregar a inicio») y úsalo como llave. En caja basta con acercar el teléfono a la etiqueta NFC o mostrar el QR.</p>
         <div className="actions">
+          <button className="btn primary" onClick={gwallet}>Agregar a Google Wallet</button>
           <button className="btn" onClick={share}>Compartir enlace</button>
           {nfcSupported() && <button className="btn" onClick={nfc}>Grabar en etiqueta NFC</button>}
         </div>
