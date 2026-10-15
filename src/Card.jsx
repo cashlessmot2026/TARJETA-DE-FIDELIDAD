@@ -19,11 +19,13 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
   const dated = visits.filter((v) => v.delta > 0)
   return (
     <div className="scene">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className={`card${flipped ? ' flipped' : ''}`}
         style={{ '--brand': color }}
         onClick={onFlip}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onFlip())}
         aria-label={flipped ? 'Ver frente de la tarjeta' : 'Ver dorso de la tarjeta'}
       >
         <span className="face front">
@@ -75,7 +77,7 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
             </span>
           </span>
         </span>
-      </button>
+      </div>
     </div>
   )
 }

@@ -57,11 +57,10 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
 
 /* ───────── tarjeta (crédito 1.586:1) ───────── */
 .hello { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; color: var(--mute); }
-.scene { perspective: 1400px; width: 100%; }
+.scene { perspective: 1400px; width: 100%; container-type: inline-size; filter: drop-shadow(0 24px 40px rgb(0 0 0 / .55)); }
 .card {
   display: block; position: relative; width: 100%; aspect-ratio: 1.586; padding: 0; border: 0; background: none;
   transform-style: preserve-3d; transition: transform .8s cubic-bezier(.2,.8,.2,1);
-  filter: drop-shadow(0 24px 40px rgb(0 0 0 / .55));
 }
 .card.flipped { transform: rotateY(180deg); }
 .face {
@@ -99,14 +98,15 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes stampIn { 0% { opacity: 0; } 8%, 80% { opacity: 1; } 100% { opacity: 0; } }
 
-.stripe { height: 42px; margin-top: 22px; background: #050806; }
-.back-body { display: flex; justify-content: space-between; gap: 14px; padding: 14px 18px 16px; flex: 1; }
-.log { display: grid; gap: 4px; align-content: start; font-size: 13px; flex: 1; }
+.stripe { height: 15%; margin-top: 6%; background: #050806; flex: none; }
+.back-body { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 5cqw; flex: 1; min-height: 0; }
+.log { display: grid; gap: 3px; align-content: center; font-size: 13px; flex: 1; min-width: 0; }
 .log b { font-size: 14px; margin-bottom: 2px; }
 .entry { display: flex; justify-content: space-between; gap: 10px; font-family: 'DM Mono', monospace; font-size: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 2px; }
 .entry span { color: var(--mint); }
 .empty { color: var(--mute); font-style: normal; font-size: 12px; }
-.qr { display: grid; gap: 4px; justify-items: center; align-content: center; background: var(--pearl); padding: 8px; border-radius: 12px; align-self: center; }
+.qr { display: grid; gap: 3px; justify-items: center; background: var(--pearl); padding: 6px; border-radius: 10px; flex: none; }
+.qr svg { width: min(26cqw, 108px); height: auto; display: block; }
 .qr small { font-family: 'DM Mono', monospace; color: var(--ink); font-size: 11px; letter-spacing: .1em; }
 
 .promos { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
