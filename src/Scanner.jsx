@@ -17,13 +17,13 @@ export function QrScanner({ onCode, active }) {
 
   useEffect(() => {
     if (!active) return
-    const scanner = new Html5Qrcode('qr-reader')
+    const scanner = new Html5Qrcode('qr-reader', { useBarCodeDetectorIfSupported: true, verbose: false })
     let started = false
     let last = { code: '', at: 0 }
     scanner
       .start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        { fps: 15, aspectRatio: 1, disableFlip: false },
         (text) => {
           const code = parseCode(text)
           if (!code) return

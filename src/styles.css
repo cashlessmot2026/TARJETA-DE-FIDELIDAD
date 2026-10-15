@@ -105,8 +105,8 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
 .entry { display: flex; justify-content: space-between; gap: 10px; font-family: 'DM Mono', monospace; font-size: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 2px; }
 .entry span { color: var(--mint); }
 .empty { color: var(--mute); font-style: normal; font-size: 12px; }
-.qr { display: grid; gap: 3px; justify-items: center; background: var(--pearl); padding: 6px; border-radius: 10px; flex: none; }
-.qr svg { width: min(26cqw, 108px); height: auto; display: block; }
+.qr { display: grid; gap: 3px; justify-items: center; background: #fff; padding: 4px; border-radius: 10px; flex: none; }
+.qr svg { width: min(36cqw, 132px); height: auto; display: block; }
 .qr small { font-family: 'DM Mono', monospace; color: var(--ink); font-size: 11px; letter-spacing: .1em; }
 
 .promos { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

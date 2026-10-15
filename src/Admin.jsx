@@ -131,6 +131,13 @@ function Clientes({ pin }) {
       .catch((e) => { if (!ctrl.signal.aborted) { setAsgMsg(e.message || 'No se pudo asignar'); setAsg(null) } })
     return () => ctrl.abort()
   }, [asg, pin, reload])
+  const del = async (c) => {
+    if (!confirm(`¿Eliminar a ${c.name}? Se borran su tarjeta, estrellas y días de regalo. No se puede deshacer.`)) return
+    setBusy(c.id)
+    try { await rpc('admin_delete_customer', { p_pin: pin, p_code: c.code }); await reload() }
+    catch (e) { alert(e.message) }
+    setBusy(null)
+  }
   const unassign = async (c) => { try { await rpc('admin_assign_nfc', { p_pin: pin, p_code: c.code, p_uid: '' }); reload() } catch (e) { alert(e.message) } }
   const rows = (list || []).filter((c) => (c.name + c.code + (c.phone || '')).toLowerCase().includes(q.toLowerCase()))
   return (
@@ -149,6 +156,7 @@ function Clientes({ pin }) {
             <div className="actions">
               <button className="link" disabled={!nfcSupported() || !!asg} onClick={() => setAsg(c)}>{c.nfc_uid ? 'Reasignar NFC' : 'Asignar NFC'}</button>
               {c.nfc_uid && <button className="link danger" onClick={() => unassign(c)}>Quitar NFC</button>}
+              <button className="link danger" disabled={busy === c.id} onClick={() => del(c)}>Eliminar</button>
             </div>
             <time>{c.last_visit ? `Última visita ${when(c.last_visit)}` : 'Sin visitas'}</time>
             <div className="stepper">

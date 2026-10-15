@@ -267,6 +267,14 @@ begin
   return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days);
 end $$;
 
+create or replace function public.admin_delete_customer(p_pin text, p_code text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  delete from customers where code = upper(trim(p_code));
+  if not found then raise exception 'Cliente no encontrado'; end if;
+end $$;
+
 create or replace function public.admin_promos(p_pin text)
 returns json language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -315,6 +323,6 @@ grant execute on function
   public.admin_check(text), public.admin_overview(text), public.admin_customers(text),
   public.admin_add_stars(text, text, int, text, text), public.admin_redeem(text, text, uuid),
   public.admin_assign_nfc(text, text, text), public.admin_lookup(text, text),
-  public.admin_register_payment(text, text, int), public.admin_confirm_day(text, text, text), public.admin_use_bonus_day(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
+  public.admin_register_payment(text, text, int), public.admin_confirm_day(text, text, text), public.admin_use_bonus_day(text, text), public.admin_delete_customer(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
   public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
 to anon, authenticated;

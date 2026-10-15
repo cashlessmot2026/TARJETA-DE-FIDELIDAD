@@ -72,7 +72,7 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
               ))}
             </span>
             <span className="qr">
-              <QRCodeSVG value={`FID:${code}`} size={96} bgColor="#F2F5F1" fgColor="#0A0F0D" level="M" />
+              <QRCodeSVG value={`FID:${code}`} size={128} marginSize={3} bgColor="#FFFFFF" fgColor="#000000" level="M" />
               <small>{code}</small>
             </span>
           </span>
