@@ -14,6 +14,7 @@ const spaced = (code) => (code || '').replace(/(.{4})/g, '$1 ').trim()
 /** Tarjeta tipo crédito: frente = estrellas, dorso = fechas de compra + QR. */
 export default function Card({ card, flipped, onFlip, justStamped }) {
   const { business, name, code, stars, goal, visits, color } = card
+  const ready = (card.bonus_days || 0) > 0
   const slots = Math.max(goal, 1)
   const filled = Math.min(stars, slots)
   const dated = visits.filter((v) => v.delta > 0)
@@ -22,7 +23,7 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
       <div
         role="button"
         tabIndex={0}
-        className={`card${flipped ? ' flipped' : ''}`}
+        className={`card${flipped ? ' flipped' : ''}${ready ? ' ready' : ''}`}
         style={{ '--brand': color }}
         onClick={onFlip}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onFlip())}
@@ -34,15 +35,29 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
             <span className="biz">{business}</span>
             <span className="chip" aria-hidden />
           </span>
-          <span className="count">
-            <b>{stars}</b>
-            <i>{stars === 1 ? 'estrella' : 'estrellas'}</i>
-          </span>
-          <span className="slots" aria-label={`${filled} de ${slots} estrellas`}>
-            {Array.from({ length: slots }, (_, i) => (
-              <Star key={i} filled={i < filled} burst={justStamped && i === filled - 1} />
-            ))}
-          </span>
+          {ready ? (
+            <span className="redeem">
+              <span className="redeem-txt">
+                <b>¡Ya tienes tu día gratis disponible!</b>
+                <i>Redímelo mostrando este QR en recepción.</i>
+              </span>
+              <span className="redeem-qr">
+                <QRCodeSVG value={`FID:${code}`} size={128} marginSize={3} bgColor="#FFFFFF" fgColor="#000000" level="M" />
+              </span>
+            </span>
+          ) : (
+            <>
+              <span className="count">
+                <b>{stars}</b>
+                <i>{stars === 1 ? 'estrella' : 'estrellas'}</i>
+              </span>
+              <span className="slots" aria-label={`${filled} de ${slots} estrellas`}>
+                {Array.from({ length: slots }, (_, i) => (
+                  <Star key={i} filled={i < filled} burst={justStamped && i === filled - 1} />
+                ))}
+              </span>
+            </>
+          )}
           <span className="row bottom">
             <span className="holder">{name}</span>
             <span className="num">{spaced(code)}</span>

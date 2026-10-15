@@ -263,8 +263,13 @@ begin
   if not found then raise exception 'Tarjeta no encontrada'; end if;
   if v.bonus_days < 1 then raise exception 'No tiene días de regalo'; end if;
   update customers set bonus_days = bonus_days - 1 where id = v.id returning * into v;
+  -- Al consumir el último día gratis se elimina la tarjeta y los datos del cliente.
+  if v.bonus_days = 0 then
+    delete from customers where id = v.id;
+    return json_build_object('name', v.name, 'code', v.code, 'stars', 0, 'bonus_days', 0, 'closed', true);
+  end if;
   insert into visits(customer_id, delta, kind, note) values (v.id, 0, 'bonus', 'Día de regalo usado');
-  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days);
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days, 'closed', false);
 end $$;
 
 create or replace function public.admin_delete_customer(p_pin text, p_code text)

@@ -222,6 +222,8 @@ function Validar({ pin }) {
 
   const find = useCallback(async (code) => {
     try {
+      const l = await rpc('admin_lookup', { p_pin: pin, p_code: code })
+      if (l.bonus_days > 0) { setRes({ ok: true, ...l, note: 'Este cliente tiene día gratis disponible.' }); navigator.vibrate?.(80); return }
       const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
       const note = `Día ${r.day} de 14 confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · ciclo completo' : ''}`
       setRes({ ok: true, ...r, note }); setBoom((n) => n + 1); navigator.vibrate?.([60, 40, 120])
@@ -233,7 +235,13 @@ function Validar({ pin }) {
     try { const r = await rpc(fn, { p_pin: pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
     catch (e) { setRes({ ok: false, msg: e.message }) }
   }
-  const useGift = () => act('admin_use_bonus_day', {}, () => 'Día de regalo aplicado.')
+  const useGift = () => act('admin_use_bonus_day', {}, (r) => r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.`)
+  const confirmDay = async () => {
+    try {
+      const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: res.code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
+      setRes({ ok: true, ...r, note: `Día ${r.day} de 14 confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} de regalo!` : ''}` }); setBoom((n) => n + 1)
+    } catch (e) { setRes({ ok: false, msg: e.message }) }
+  }
 
   return (
     <>
@@ -274,7 +282,8 @@ function Validar({ pin }) {
                 <span>{res.note || 'Día pagado confirmado.'}</span>
                 <span>{res.stars} días pagados · {res.bonus_days} de regalo disponibles</span>
                 <div className="actions">
-                  <button className="btn" disabled={res.bonus_days < 1} onClick={useGift}>Usar día de regalo</button>
+                  {res.bonus_days > 0 && !res.closed && <button className="btn primary" onClick={useGift}>Redimir día gratis</button>}
+                  {res.day === undefined && !res.closed && <button className="btn" onClick={confirmDay}>Confirmar día pagado</button>}
                 </div>
               </div>
             </>

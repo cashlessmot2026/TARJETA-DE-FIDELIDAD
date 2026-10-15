@@ -108,7 +108,7 @@ function Wallet({ token, onReset }) {
       <Card card={card} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
 
       <p className="hint">
-        {next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Muestra tu tarjeta en caja para sumar.'}
+        {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Muestra tu tarjeta en caja para sumar.'}
       </p>
 
       <section className="panel">
