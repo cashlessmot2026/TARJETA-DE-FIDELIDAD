@@ -54,12 +54,15 @@ insert into public.settings(key, value) values
   ('brand_color', '#5CE1B0')
 on conflict (key) do nothing;
 
+-- Premios del gimnasio (se entregan automáticamente al completar los días)
+delete from public.promotions where title in ('Café gratis', 'Postre de cortesía');
 insert into public.promotions(title, description, stars_required)
-select 'Café gratis', 'Una bebida de la casa por tu lealtad.', 5
-where not exists (select 1 from public.promotions);
+select '1 día de regalo', 'Completa 7 días pagados y recibe 1 día gratis.', 7
+where not exists (select 1 from public.promotions where title = '1 día de regalo');
 insert into public.promotions(title, description, stars_required)
-select 'Postre de cortesía', 'Elige cualquier postre del día.', 10
-where (select count(*) from public.promotions) = 1;
+select '2 días de regalo', 'Completa 14 días pagados y recibe 2 días gratis.', 14
+where not exists (select 1 from public.promotions where title = '2 días de regalo');
+update public.settings set value = '14' where key = 'goal';
 
 -- ───────── helpers ─────────
 create or replace function public._pin_ok(p_pin text) returns boolean
@@ -228,6 +231,29 @@ begin
   return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days, 'paid', p_days, 'gift', gift);
 end $$;
 
+-- Confirma el día pagado: +1 estrella. Al día 7 regala 1 día; al día 14 regala 2 y el ciclo reinicia.
+create or replace function public.admin_confirm_day(p_pin text, p_code text, p_kind text default 'scan')
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers; last_at timestamptz; n int; gift int := 0;
+begin
+  perform _require_admin(p_pin);
+  select * into v from customers
+   where code = upper(trim(p_code)) or nfc_uid = upper(trim(p_code)) or id::text = trim(p_code);
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  select max(created_at) into last_at from visits where customer_id = v.id and kind in ('scan','nfc','day');
+  if last_at is not null and last_at > now() - interval '12 hours' then
+    raise exception 'El día de % ya fue confirmado hoy', v.name;
+  end if;
+  n := case when v.stars >= 14 then 1 else v.stars + 1 end;
+  if n = 7 then gift := 1; elsif n = 14 then gift := 2; end if;
+  update customers set stars = n, bonus_days = bonus_days + gift where id = v.id returning * into v;
+  insert into visits(customer_id, delta, kind, note)
+  values (v.id, 1, case when p_kind = 'nfc' then 'nfc' else 'scan' end,
+          'Día ' || n || ' pagado' || case when gift > 0 then ' · +' || gift || ' de regalo' else '' end);
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days,
+                           'day', n, 'gift', gift, 'completed', n = 14);
+end $$;
+
 create or replace function public.admin_use_bonus_day(p_pin text, p_code text)
 returns json language plpgsql security definer set search_path = public, extensions as $$
 declare v customers;
@@ -289,6 +315,6 @@ grant execute on function
   public.admin_check(text), public.admin_overview(text), public.admin_customers(text),
   public.admin_add_stars(text, text, int, text, text), public.admin_redeem(text, text, uuid),
   public.admin_assign_nfc(text, text, text), public.admin_lookup(text, text),
-  public.admin_register_payment(text, text, int), public.admin_use_bonus_day(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
+  public.admin_register_payment(text, text, int), public.admin_confirm_day(text, text, text), public.admin_use_bonus_day(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
   public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
 to anon, authenticated;

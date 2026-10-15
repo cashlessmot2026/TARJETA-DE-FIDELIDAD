@@ -1,3 +1,4 @@
+import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './supabase.js'
 import { QrScanner, useNfcReader, parseCode, assignTag, nfcSupported } from './Scanner.jsx'
@@ -209,21 +210,26 @@ function Validar({ pin }) {
   const [manual, setManual] = useState('')
   const [res, setRes] = useState(null)
 
+  const [boom, setBoom] = useState(0)
+
   const find = useCallback(async (code) => {
-    try { setRes({ ok: true, ...(await rpc('admin_lookup', { p_pin: pin, p_code: code })) }); navigator.vibrate?.(80) }
-    catch (e) { setRes({ ok: false, msg: e.message }) }
-  }, [pin])
+    try {
+      const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
+      const note = `Día ${r.day} de 14 confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · ciclo completo' : ''}`
+      setRes({ ok: true, ...r, note }); setBoom((n) => n + 1); navigator.vibrate?.([60, 40, 120])
+    } catch (e) { setRes({ ok: false, msg: e.message }) }
+  }, [pin, mode])
 
   const nfc = useNfcReader((c) => find(c), mode === 'nfc')
   const act = async (fn, args, note) => {
     try { const r = await rpc(fn, { p_pin: pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
     catch (e) { setRes({ ok: false, msg: e.message }) }
   }
-  const pay = (days) => act('admin_register_payment', { p_days: days }, (r) => `Pago de ${r.paid} días registrado. Regalo: +${r.gift} ${r.gift === 1 ? 'día' : 'días'}.`)
   const useGift = () => act('admin_use_bonus_day', {}, () => 'Día de regalo aplicado.')
 
   return (
     <>
+      <Fireworks show={boom > 0} key={boom} />
       <h1 className="h1">Validar tarjeta</h1>
       <div className="seg" role="tablist">
         {[['qr', 'Escanear QR'], ['nfc', 'Leer NFC'], ['code', 'Escribir código']].map(([k, l]) =>
@@ -257,11 +263,9 @@ function Validar({ pin }) {
               <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" className="ring" /><path d="M38 62l15 15 30-34" className="tick" /></svg>
               <div>
                 <b>{res.name}</b>
-                <span>{res.note || 'Elige el pago que hizo el cliente.'}</span>
+                <span>{res.note || 'Día pagado confirmado.'}</span>
                 <span>{res.stars} días pagados · {res.bonus_days} de regalo disponibles</span>
                 <div className="actions">
-                  <button className="btn primary" onClick={() => pay(7)}>Pagó 7 días (+1 regalo)</button>
-                  <button className="btn primary" onClick={() => pay(14)}>Pagó 14 días (+2 regalo)</button>
                   <button className="btn" disabled={res.bonus_days < 1} onClick={useGift}>Usar día de regalo</button>
                 </div>
               </div>

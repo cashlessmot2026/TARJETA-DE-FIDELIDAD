@@ -1,3 +1,4 @@
+import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
@@ -103,6 +104,7 @@ function Wallet({ token, onReset }) {
         <button className="link" onClick={() => setFlipped((f) => !f)}>{flipped ? 'Ver estrellas' : 'Ver compras y QR'}</button>
       </header>
 
+      <Fireworks show={stamped} />
       <Card card={card} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
 
       <p className="hint">
@@ -111,7 +113,7 @@ function Wallet({ token, onReset }) {
 
       <section className="panel">
         <h2>Días de regalo</h2>
-        <p className="muted">Paga 7 días y recibe 1 de regalo; paga 14 y recibe 2.</p>
+        <p className="muted">Cada día pagado suma una estrella. Al completar 7 días recibes 1 de regalo; al completar 14, 2.</p>
         <p><b>{card.bonus_days || 0}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}</p>
       </section>
 
