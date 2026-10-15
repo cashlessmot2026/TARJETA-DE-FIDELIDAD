@@ -22,11 +22,16 @@ function Register({ onDone }) {
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [plans, setPlans] = useState([])
+  const [plan, setPlan] = useState(null)
+  useEffect(() => {
+    rpc('app_plans').then((p) => { setPlans(p || []); if (p?.length) setPlan(p[0].id) }).catch(() => {})
+  }, [])
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setErr('')
     try {
-      const r = await rpc('app_register', { p_name: name, p_phone: phone })
+      const r = await rpc('app_register', { p_name: name, p_phone: phone, p_plan: plan })
       onDone(r.token)
     } catch (ex) { setErr(ex.message); setBusy(false) }
   }
@@ -37,6 +42,17 @@ function Register({ onDone }) {
       <form className="panel form" onSubmit={submit}>
         <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} placeholder="Ana Pérez" /></label>
         <label>Teléfono <small>(opcional)</small><input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" placeholder="555 123 4567" /></label>
+        {plans.length > 0 && (
+          <fieldset className="plans">
+            <legend>Elige tu plan</legend>
+            {plans.map((p) => (
+              <label key={p.id} className={`plan${plan === p.id ? ' on' : ''}`}>
+                <input type="radio" name="plan" checked={plan === p.id} onChange={() => setPlan(p.id)} />
+                <span><b>{p.title}</b><small>{p.description || `${p.stars_required} días pagados`} · {p.reward_days} {p.reward_days === 1 ? 'día' : 'días'} de regalo</small></span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         {err && <p className="err">{err}</p>}
         <button className="btn primary" disabled={busy}>{busy ? 'Creando tarjeta…' : 'Crear mi tarjeta'}</button>
       </form>
@@ -49,6 +65,7 @@ function Wallet({ token, onReset }) {
   const [flipped, setFlipped] = useState(false)
   const [stamped, setStamped] = useState(false)
   const [msg, setMsg] = useState('')
+  const [skipUp, setSkipUp] = useState(false)
   const prev = useRef(null)
 
   const refresh = useCallback(async () => {
@@ -111,9 +128,20 @@ function Wallet({ token, onReset }) {
         {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Muestra tu tarjeta en caja para sumar.'}
       </p>
 
+      {card.can_upgrade && card.next_plan && !skipUp && (
+        <section className="panel upgrade">
+          <h2>¡Completaste tu plan de {card.plan.days} días!</h2>
+          <p className="muted">¿Quieres seguir con el plan de <b>{card.next_plan.days} días</b>? Al completarlo recibes {card.next_plan.reward_days} {card.next_plan.reward_days === 1 ? 'día' : 'días'} de regalo en total.</p>
+          <div className="actions">
+            <button className="btn primary" onClick={async () => { try { await rpc('app_choose_plan', { p_token: token, p_plan: card.next_plan.id }); refresh() } catch (e) { setMsg(e.message) } }}>Sí, pasar al plan de {card.next_plan.days} días</button>
+            <button className="btn" onClick={() => setSkipUp(true)}>No, repetir {card.plan.days} días</button>
+          </div>
+        </section>
+      )}
+
       <section className="panel">
         <h2>Días de regalo</h2>
-        <p className="muted">Cada día pagado suma una estrella. Al completar 7 días recibes 1 de regalo; al completar 14, 2.</p>
+        <p className="muted">Cada día pagado suma una estrella. Tu plan: {card.plan?.title} — al completar {card.plan?.days} días recibes {card.plan?.reward_days} de regalo.</p>
         <p><b>{card.bonus_days || 0}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}</p>
       </section>
 
@@ -126,7 +154,7 @@ function Wallet({ token, onReset }) {
             return (
               <li key={p.id} className={ok ? 'ok' : ''}>
                 <div><b>{p.title}</b><span>{p.description}</span></div>
-                <em>{ok ? 'Disponible' : `${p.stars_required} ★`}</em>
+                <em>{`${p.stars_required} días · +${p.reward_days} gratis`}</em>
               </li>
             )
           })}

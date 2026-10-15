@@ -152,7 +152,7 @@ function Clientes({ pin }) {
         {list && rows.length === 0 && <p className="muted">No hay clientes que coincidan.</p>}
         {rows.map((c) => (
           <div className="trow" key={c.id}>
-            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.nfc_uid ? ' · NFC ✓' : ''}</span></div>
+            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.plan_title ? ` · ${c.plan_title}` : ''}{c.nfc_uid ? ' · NFC ✓' : ''}</span></div>
             <div className="actions">
               <button className="link" disabled={!nfcSupported() || !!asg} onClick={() => setAsg(c)}>{c.nfc_uid ? 'Reasignar NFC' : 'Asignar NFC'}</button>
               {c.nfc_uid && <button className="link danger" onClick={() => unassign(c)}>Quitar NFC</button>}
@@ -173,24 +173,25 @@ function Clientes({ pin }) {
 
 function Promos({ pin }) {
   const [list, reload, err] = useRpc('admin_promos', pin)
-  const blank = { id: null, title: '', description: '', stars_required: 5, active: true }
+  const blank = { id: null, title: '', description: '', stars_required: 7, reward_days: 1, active: true }
   const [f, setF] = useState(blank)
   const save = async (e) => {
     e.preventDefault()
     try {
-      await rpc('admin_save_promo', { p_pin: pin, p_id: f.id, p_title: f.title, p_desc: f.description, p_stars: Number(f.stars_required), p_active: f.active })
+      await rpc('admin_save_promo', { p_pin: pin, p_id: f.id, p_title: f.title, p_desc: f.description, p_stars: Number(f.stars_required), p_active: f.active, p_reward: Number(f.reward_days) })
       setF(blank); reload()
     } catch (x) { alert(x.message) }
   }
   const del = async (p) => { if (confirm(`¿Eliminar «${p.title}»?`)) { await rpc('admin_delete_promo', { p_pin: pin, p_id: p.id }); reload() } }
   return (
     <>
-      <h1 className="h1">Promociones</h1>
+      <h1 className="h1">Planes y premios</h1>
       {err && <p className="err">{err}</p>}
       <form className="panel form grid" onSubmit={save}>
-        <h2>{f.id ? 'Editar promoción' : 'Nueva promoción'}</h2>
+        <h2>{f.id ? 'Editar plan' : 'Nuevo plan'}</h2>
         <label>Título<input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="2x1 en bebidas" /></label>
-        <label>Estrellas necesarias<input required type="number" min="1" value={f.stars_required} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
+        <label>Días del plan (estrellas)<input required type="number" min="1" value={f.stars_required} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
+        <label>Días de regalo al completar<input required type="number" min="0" value={f.reward_days} onChange={(e) => setF({ ...f, reward_days: e.target.value })} /></label>
         <label className="wide">Descripción<input value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Válido de lunes a jueves" /></label>
         <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />Visible para los clientes</label>
         <div className="actions">
@@ -203,7 +204,7 @@ function Promos({ pin }) {
           {(list || []).map((p) => (
             <li key={p.id} className={p.active ? 'ok' : 'off'}>
               <div><b>{p.title}</b><span>{p.description}</span></div>
-              <em>{p.stars_required} ★{p.active ? '' : ' · oculta'}</em>
+              <em>{p.stars_required} días · +{p.reward_days} regalo{p.active ? '' : ' · oculta'}</em>
               <div className="actions"><button className="link" onClick={() => setF(p)}>Editar</button><button className="link danger" onClick={() => del(p)}>Eliminar</button></div>
             </li>
           ))}
@@ -225,7 +226,7 @@ function Validar({ pin }) {
       const l = await rpc('admin_lookup', { p_pin: pin, p_code: code })
       if (l.bonus_days > 0) { setRes({ ok: true, ...l, note: 'Este cliente tiene día gratis disponible.' }); navigator.vibrate?.(80); return }
       const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
-      const note = `Día ${r.day} de 14 confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · ciclo completo' : ''}`
+      const note = `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · plan completo' : ''}`
       setRes({ ok: true, ...r, note }); setBoom((n) => n + 1); navigator.vibrate?.([60, 40, 120])
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }, [pin, mode])
@@ -239,7 +240,7 @@ function Validar({ pin }) {
   const confirmDay = async () => {
     try {
       const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: res.code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
-      setRes({ ok: true, ...r, note: `Día ${r.day} de 14 confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} de regalo!` : ''}` }); setBoom((n) => n + 1)
+      setRes({ ok: true, ...r, note: `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} de regalo!` : ''}` }); setBoom((n) => n + 1)
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
 

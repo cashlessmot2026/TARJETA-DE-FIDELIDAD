@@ -331,3 +331,145 @@ grant execute on function
   public.admin_register_payment(text, text, int), public.admin_confirm_day(text, text, text), public.admin_use_bonus_day(text, text), public.admin_delete_customer(text, text), public.admin_promos(text), public.admin_save_promo(text, uuid, text, text, int, boolean),
   public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
 to anon, authenticated;
+
+-- ───────── Planes elegibles (7 / 14 días, editables desde el admin) ─────────
+alter table public.promotions add column if not exists reward_days int not null default 1;
+update public.promotions set reward_days = 1 where stars_required = 7 and reward_days = 1;
+update public.promotions set reward_days = 2 where stars_required = 14;
+alter table public.customers add column if not exists plan_id uuid references public.promotions(id) on delete set null;
+alter table public.customers add column if not exists cycle_gift int not null default 0;
+
+create or replace function public._plan_of(p_plan uuid) returns public.promotions
+language plpgsql security definer set search_path = public as $$
+declare pr promotions;
+begin
+  select * into pr from promotions where id = p_plan and active;
+  if not found then
+    select * into pr from promotions where active order by stars_required limit 1;
+  end if;
+  return pr;
+end $$;
+
+create or replace function public.app_plans() returns json
+language sql security definer set search_path = public as $$
+  select coalesce(json_agg(p), '[]'::json) from (
+    select id, title, description, stars_required, reward_days
+    from promotions where active order by stars_required) p;
+$$;
+
+drop function if exists public.app_register(text, text);
+create or replace function public.app_register(p_name text, p_phone text default null, p_plan uuid default null)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers; pr promotions;
+begin
+  if length(trim(coalesce(p_name,''))) < 2 then raise exception 'Escribe tu nombre'; end if;
+  pr := _plan_of(p_plan);
+  insert into customers(name, phone, code, plan_id)
+  values (trim(p_name), nullif(trim(p_phone),''), upper(substr(encode(gen_random_bytes(6),'hex'),1,8)), pr.id)
+  returning * into v;
+  return json_build_object('token', v.token, 'code', v.code);
+end $$;
+
+create or replace function public.app_get_card(p_token uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare v customers; pr promotions; nx promotions;
+begin
+  select * into v from customers where token = p_token;
+  if not found then return null; end if;
+  pr := _plan_of(v.plan_id);
+  select * into nx from promotions where active and stars_required > pr.stars_required
+   order by stars_required limit 1;
+  return json_build_object(
+    'name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days,
+    'since', v.created_at,
+    'goal', pr.stars_required,
+    'plan', json_build_object('id', pr.id, 'title', pr.title, 'days', pr.stars_required, 'reward_days', pr.reward_days),
+    'can_upgrade', (v.stars >= pr.stars_required and nx.id is not null),
+    'next_plan', case when nx.id is null then null else
+        json_build_object('id', nx.id, 'title', nx.title, 'days', nx.stars_required, 'reward_days', nx.reward_days) end,
+    'business', _setting('business_name'),
+    'color', _setting('brand_color'),
+    'visits', coalesce((select json_agg(x) from (
+        select created_at as at, delta, kind from visits
+        where customer_id = v.id order by created_at desc limit 12) x), '[]'::json),
+    'promos', coalesce((select json_agg(p) from (
+        select id, title, description, stars_required, reward_days from promotions
+        where active order by stars_required) p), '[]'::json)
+  );
+end $$;
+
+create or replace function public.app_choose_plan(p_token uuid, p_plan uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare v customers; pr promotions;
+begin
+  select * into v from customers where token = p_token;
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  select * into pr from promotions where id = p_plan and active;
+  if not found then raise exception 'Plan no disponible'; end if;
+  if pr.stars_required <= v.stars then raise exception 'Ese plan ya está completo'; end if;
+  update customers set plan_id = pr.id where id = v.id;
+  return json_build_object('plan', pr.title, 'days', pr.stars_required);
+end $$;
+
+create or replace function public.admin_confirm_day(p_pin text, p_code text, p_kind text default 'scan')
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare v customers; pr promotions; last_at timestamptz; n int; gift int := 0; cg int;
+begin
+  perform _require_admin(p_pin);
+  select * into v from customers
+   where code = upper(trim(p_code)) or nfc_uid = upper(trim(p_code)) or id::text = trim(p_code);
+  if not found then raise exception 'Tarjeta no encontrada'; end if;
+  select max(created_at) into last_at from visits where customer_id = v.id and kind in ('scan','nfc','day');
+  if last_at is not null and last_at > now() - interval '12 hours' then
+    raise exception 'El día de % ya fue confirmado hoy', v.name;
+  end if;
+  pr := _plan_of(v.plan_id);
+  if v.stars >= pr.stars_required then n := 1; cg := 0; else n := v.stars + 1; cg := v.cycle_gift; end if;
+  if n = pr.stars_required then gift := greatest(pr.reward_days - cg, 0); end if;
+  update customers set stars = n, bonus_days = bonus_days + gift, cycle_gift = cg + gift
+   where id = v.id returning * into v;
+  insert into visits(customer_id, delta, kind, note)
+  values (v.id, 1, case when p_kind = 'nfc' then 'nfc' else 'scan' end,
+          'Día ' || n || ' pagado' || case when gift > 0 then ' · +' || gift || ' de regalo' else '' end);
+  return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days,
+                           'day', n, 'target', pr.stars_required, 'gift', gift, 'completed', n = pr.stars_required);
+end $$;
+
+create or replace function public.admin_customers(p_pin text)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  return coalesce((select json_agg(c) from (
+    select id, code, name, phone, stars, bonus_days, created_at, nfc_uid,
+      (select title from promotions p where p.id = customers.plan_id) as plan_title,
+      (select max(created_at) from visits v where v.customer_id = customers.id) as last_visit
+    from customers order by stars desc, created_at desc) c), '[]'::json);
+end $$;
+
+drop function if exists public.admin_save_promo(text, uuid, text, text, int, boolean);
+create or replace function public.admin_save_promo(p_pin text, p_id uuid, p_title text, p_desc text,
+                                                  p_stars int, p_active boolean, p_reward int default 1)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  if p_reward < 0 then raise exception 'Los días de regalo no pueden ser negativos'; end if;
+  if p_id is null then
+    insert into promotions(title, description, stars_required, active, reward_days)
+    values (p_title, p_desc, p_stars, p_active, p_reward);
+  else
+    update promotions set title = p_title, description = p_desc, stars_required = p_stars,
+      active = p_active, reward_days = p_reward where id = p_id;
+  end if;
+end $$;
+
+revoke all on all functions in schema public from public, anon, authenticated;
+grant execute on function
+  public.app_register(text, text, uuid), public.app_get_card(uuid), public.app_plans(), public.app_choose_plan(uuid, uuid),
+  public.admin_check(text), public.admin_overview(text), public.admin_customers(text),
+  public.admin_add_stars(text, text, int, text, text), public.admin_redeem(text, text, uuid),
+  public.admin_assign_nfc(text, text, text), public.admin_lookup(text, text),
+  public.admin_register_payment(text, text, int), public.admin_confirm_day(text, text, text),
+  public.admin_use_bonus_day(text, text), public.admin_delete_customer(text, text), public.admin_promos(text),
+  public.admin_save_promo(text, uuid, text, text, int, boolean, int),
+  public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
+to anon, authenticated;
