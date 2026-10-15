@@ -1,0 +1,14 @@
+- main [ref=e3]:
+  - heading "Tu tarjeta de estrellas" [level=1] [ref=e4]
+  - paragraph [ref=e5]: Regístrate una vez. Cada visita suma una estrella y las estrellas se canjean por premios.
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - text: Nombre
+      - textbox "Nombre" [ref=e8]:
+        - /placeholder: Ana Pérez
+    - generic [ref=e9]:
+      - text: Teléfono
+      - generic [ref=e10]: (opcional)
+      - textbox "Teléfono (opcional)" [ref=e11]:
+        - /placeholder: 555 123 4567
+    - button "Crear mi tarjeta" [ref=e12] [cursor=pointer]
