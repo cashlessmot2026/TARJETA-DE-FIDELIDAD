@@ -2,29 +2,35 @@ import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './supabase.js'
 import { QrScanner, useNfcReader, parseCode, assignTag, nfcSupported } from './Scanner.jsx'
+import Poster from './Poster.jsx'
 
-const PIN_KEY = 'fid_admin_pin'
-const getPin = () => { try { return sessionStorage.getItem(PIN_KEY) } catch { return null } }
+// Sesión del admin: { p_biz, p_pin, biz } — p_biz es el enlace del negocio (#/admin/<negocio>).
+const KEY = 'fid_admin'
+const getSession = () => { try { return JSON.parse(sessionStorage.getItem(KEY)) } catch { return null } }
 const when = (iso) => new Date(iso).toLocaleString('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-export default function Admin() {
-  const [pin, setPin] = useState(getPin())
-  if (!pin) return <Gate onOk={(p) => { try { sessionStorage.setItem(PIN_KEY, p) } catch {} ; setPin(p) }} />
-  return <Dash pin={pin} onExit={() => { try { sessionStorage.removeItem(PIN_KEY) } catch {} ; setPin(null) }} />
+export default function Admin({ slug }) {
+  const [sess, setSess] = useState(() => { const s = getSession(); return s && (!slug || s.p_biz === slug) ? s : null })
+  if (!sess) return <Gate slug={slug} onOk={(s) => { try { sessionStorage.setItem(KEY, JSON.stringify(s)) } catch {} ; setSess(s) }} />
+  const { biz, ...auth } = sess
+  return <Dash pin={auth} biz={biz} onExit={() => { try { sessionStorage.removeItem(KEY) } catch {} ; setSess(null) }} />
 }
 
-function Gate({ onOk }) {
+function Gate({ slug, onOk }) {
+  const [b, setB] = useState(slug || '')
   const [v, setV] = useState('')
   const [err, setErr] = useState('')
   const go = async (e) => {
     e.preventDefault()
-    try { (await rpc('admin_check', { p_pin: v })) ? onOk(v) : setErr('PIN incorrecto') }
+    const auth = { p_biz: b.trim().toLowerCase(), p_pin: v }
+    try { onOk({ ...auth, biz: await rpc('admin_check', auth) }) }
     catch (x) { setErr(x.message) }
   }
   return (
     <main className="shell narrow">
       <h1 className="hero sm">Acceso del negocio</h1>
       <form className="panel form" onSubmit={go}>
+        {!slug && <label>Enlace del negocio<input value={b} onChange={(e) => setB(e.target.value)} placeholder="panaderia-la-espiga" autoCapitalize="none" required /></label>}
         <label>PIN<input type="password" inputMode="numeric" autoFocus value={v} onChange={(e) => setV(e.target.value)} /></label>
         {err && <p className="err">{err}</p>}
         <button className="btn primary">Entrar</button>
@@ -33,14 +39,14 @@ function Gate({ onOk }) {
   )
 }
 
-const TABS = [['panel', 'Panel'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Validar'], ['ajustes', 'Ajustes']]
+const TABS = [['panel', 'Panel'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Validar'], ['qr', 'Código QR'], ['ajustes', 'Ajustes']]
 
-function Dash({ pin, onExit }) {
+function Dash({ pin, biz, onExit }) {
   const [tab, setTab] = useState('panel')
   return (
     <div className="admin">
       <nav className="side" aria-label="Administración">
-        <div className="logo"><svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.5l-6 3.4 1.3-6.7-5-4.7 6.8-.8z" /></svg>Estrellas</div>
+        <div className="logo">{biz.logo ? <img src={biz.logo} alt="" /> : <svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.5l-6 3.4 1.3-6.7-5-4.7 6.8-.8z" /></svg>}{biz.name}</div>
         {TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
         <button className="exit" onClick={onExit}>Salir</button>
       </nav>
@@ -50,6 +56,7 @@ function Dash({ pin, onExit }) {
         {tab === 'promos' && <Promos pin={pin} />}
         {tab === 'premios' && <Premios pin={pin} />}
         {tab === 'validar' && <Validar pin={pin} />}
+        {tab === 'qr' && <><h1 className="h1 no-print">Código QR de registro</h1><p className="muted no-print">Imprime este afiche y ponlo en tu local. Tus clientes lo escanean para crear su tarjeta.</p><Poster biz={biz} /></>}
         {tab === 'ajustes' && <Ajustes pin={pin} />}
       </section>
     </div>
@@ -59,7 +66,7 @@ function Dash({ pin, onExit }) {
 function useRpc(fn, pin) {
   const [data, set] = useState(null)
   const [err, setErr] = useState('')
-  const reload = useCallback(() => rpc(fn, { p_pin: pin }).then(set).catch((e) => setErr(e.message)), [fn, pin])
+  const reload = useCallback(() => rpc(fn, pin).then(set).catch((e) => setErr(e.message)), [fn, pin])
   useEffect(() => { reload() }, [reload])
   return [data, reload, err]
 }
@@ -113,7 +120,7 @@ function Clientes({ pin }) {
   const [busy, setBusy] = useState(null)
   const adj = async (c, delta) => {
     setBusy(c.id)
-    try { await rpc('admin_add_stars', { p_pin: pin, p_code: c.code, p_delta: delta, p_kind: 'manual', p_note: 'Ajuste del administrador' }); await reload() }
+    try { await rpc('admin_add_stars', { ...pin, p_code: c.code, p_delta: delta, p_kind: 'manual', p_note: 'Ajuste del administrador' }); await reload() }
     catch (e) { alert(e.message) }
     setBusy(null)
   }
@@ -125,7 +132,7 @@ function Clientes({ pin }) {
     setAsgMsg('')
     assignTag(asg.code, ctrl.signal)
       .then(async ({ uid, written }) => {
-        await rpc('admin_assign_nfc', { p_pin: pin, p_code: asg.code, p_uid: uid })
+        await rpc('admin_assign_nfc', { ...pin, p_code: asg.code, p_uid: uid })
         setAsgMsg(`Etiqueta ${uid} asignada a ${asg.name}${written ? '' : ' (solo por número de serie)'}.`)
         setAsg(null); reload()
       })
@@ -135,11 +142,11 @@ function Clientes({ pin }) {
   const del = async (c) => {
     if (!confirm(`¿Eliminar a ${c.name}? Se borran su tarjeta, estrellas y días de regalo. No se puede deshacer.`)) return
     setBusy(c.id)
-    try { await rpc('admin_delete_customer', { p_pin: pin, p_code: c.code }); await reload() }
+    try { await rpc('admin_delete_customer', { ...pin, p_code: c.code }); await reload() }
     catch (e) { alert(e.message) }
     setBusy(null)
   }
-  const unassign = async (c) => { try { await rpc('admin_assign_nfc', { p_pin: pin, p_code: c.code, p_uid: '' }); reload() } catch (e) { alert(e.message) } }
+  const unassign = async (c) => { try { await rpc('admin_assign_nfc', { ...pin, p_code: c.code, p_uid: '' }); reload() } catch (e) { alert(e.message) } }
   const rows = (list || []).filter((c) => (c.name + c.code + (c.phone || '')).toLowerCase().includes(q.toLowerCase()))
   return (
     <>
@@ -179,11 +186,11 @@ function Promos({ pin }) {
   const save = async (e) => {
     e.preventDefault()
     try {
-      await rpc('admin_save_promo', { p_pin: pin, p_id: f.id, p_title: f.title, p_desc: f.description, p_stars: Number(f.stars_required), p_active: f.active, p_reward: Number(f.reward_days) })
+      await rpc('admin_save_promo', { ...pin, p_id: f.id, p_title: f.title, p_desc: f.description, p_stars: Number(f.stars_required), p_active: f.active, p_reward: Number(f.reward_days) })
       setF(blank); reload()
     } catch (x) { alert(x.message) }
   }
-  const del = async (p) => { if (confirm(`¿Eliminar «${p.title}»?`)) { await rpc('admin_delete_promo', { p_pin: pin, p_id: p.id }); reload() } }
+  const del = async (p) => { if (confirm(`¿Eliminar «${p.title}»?`)) { await rpc('admin_delete_promo', { ...pin, p_id: p.id }); reload() } }
   return (
     <>
       <h1 className="h1">Planes</h1>
@@ -222,12 +229,12 @@ function Premios({ pin }) {
   const save = async (e) => {
     e.preventDefault()
     try {
-      await rpc('admin_save_reward', { p_pin: pin, p_id: f.id, p_title: f.title, p_desc: f.description || '', p_stars: f.stars_required ? Number(f.stars_required) : null, p_visible: f.visible })
+      await rpc('admin_save_reward', { ...pin, p_id: f.id, p_title: f.title, p_desc: f.description || '', p_stars: f.stars_required ? Number(f.stars_required) : null, p_visible: f.visible })
       setF(blank); reload()
     } catch (x) { alert(x.message) }
   }
-  const toggle = async (r) => { try { await rpc('admin_set_reward_visible', { p_pin: pin, p_id: r.id, p_visible: !r.visible }); reload() } catch (x) { alert(x.message) } }
-  const del = async (r) => { if (confirm(`¿Eliminar «${r.title}»?`)) { await rpc('admin_delete_reward', { p_pin: pin, p_id: r.id }); reload() } }
+  const toggle = async (r) => { try { await rpc('admin_set_reward_visible', { ...pin, p_id: r.id, p_visible: !r.visible }); reload() } catch (x) { alert(x.message) } }
+  const del = async (r) => { if (confirm(`¿Eliminar «${r.title}»?`)) { await rpc('admin_delete_reward', { ...pin, p_id: r.id }); reload() } }
   return (
     <>
       <h1 className="h1">Premios</h1>
@@ -273,9 +280,9 @@ function Validar({ pin }) {
 
   const find = useCallback(async (code) => {
     try {
-      const l = await rpc('admin_lookup', { p_pin: pin, p_code: code })
+      const l = await rpc('admin_lookup', { ...pin, p_code: code })
       if (l.bonus_days > 0) { setRes({ ok: true, ...l, note: 'Este cliente tiene día gratis disponible.' }); navigator.vibrate?.(80); return }
-      const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
+      const r = await rpc('admin_confirm_day', { ...pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
       const note = `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · plan completo' : ''}`
       setRes({ ok: true, ...r, note }); setBoom((n) => n + 1); navigator.vibrate?.([60, 40, 120])
     } catch (e) { setRes({ ok: false, msg: e.message }) }
@@ -283,13 +290,13 @@ function Validar({ pin }) {
 
   const nfc = useNfcReader((c) => find(c), mode === 'nfc')
   const act = async (fn, args, note) => {
-    try { const r = await rpc(fn, { p_pin: pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
+    try { const r = await rpc(fn, { ...pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
     catch (e) { setRes({ ok: false, msg: e.message }) }
   }
   const useGift = () => act('admin_use_bonus_day', {}, (r) => r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.`)
   const confirmDay = async () => {
     try {
-      const r = await rpc('admin_confirm_day', { p_pin: pin, p_code: res.code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
+      const r = await rpc('admin_confirm_day', { ...pin, p_code: res.code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
       setRes({ ok: true, ...r, note: `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} de regalo!` : ''}` }); setBoom((n) => n + 1)
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
@@ -349,14 +356,14 @@ function Ajustes({ pin }) {
   const [d, , err] = useRpc('admin_overview', pin)
   const [f, setF] = useState(null)
   const [done, setDone] = useState('')
-  useEffect(() => { if (d) setF({ business: d.business, color: d.color, goal: d.goal, newPin: '' }) }, [d])
+  useEffect(() => { if (d) setF({ color: d.color, newPin: '' }) }, [d])
   if (err) return <p className="err">{err}</p>
   if (!f) return <p className="muted">Cargando…</p>
   const save = async (e) => {
     e.preventDefault()
     try {
-      await rpc('admin_save_settings', { p_pin: pin, p_business: f.business, p_color: f.color, p_goal: Number(f.goal), p_new_pin: f.newPin || null })
-      if (f.newPin) { try { sessionStorage.removeItem(PIN_KEY) } catch {} }
+      await rpc('admin_save_settings', { ...pin, p_color: f.color, p_new_pin: f.newPin || null })
+      if (f.newPin) { try { sessionStorage.removeItem(KEY) } catch {} }
       setDone(f.newPin ? 'Guardado. Pulsa «Salir» y entra con el nuevo PIN.' : 'Cambios guardados.')
     } catch (x) { setDone(x.message) }
   }
@@ -364,9 +371,7 @@ function Ajustes({ pin }) {
     <>
       <h1 className="h1">Ajustes</h1>
       <form className="panel form grid" onSubmit={save}>
-        <label>Nombre del negocio<input value={f.business} onChange={(e) => setF({ ...f, business: e.target.value })} required /></label>
         <label>Color de la tarjeta<input type="color" value={f.color} onChange={(e) => setF({ ...f, color: e.target.value })} /></label>
-        <label>Estrellas visibles en la tarjeta<input type="number" min="3" max="20" value={f.goal} onChange={(e) => setF({ ...f, goal: e.target.value })} /></label>
         <label>Nuevo PIN <small>(vacío para conservar el actual)</small><input type="password" inputMode="numeric" value={f.newPin} onChange={(e) => setF({ ...f, newPin: e.target.value })} minLength={4} /></label>
         <div className="actions"><button className="btn primary">Guardar</button></div>
         {done && <p className="muted" role="status">{done}</p>}

@@ -560,3 +560,5 @@ grant execute on function
   public.admin_rewards(text), public.admin_save_reward(text, uuid, text, text, int, boolean),
   public.admin_set_reward_visible(text, uuid, boolean), public.admin_delete_reward(text, uuid)
 to anon, authenticated;
+
+-- ⚠️ Continúa en supabase/multinegocio.sql (varios negocios). Ese archivo reemplaza las funciones de admin de arriba.

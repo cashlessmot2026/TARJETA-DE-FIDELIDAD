@@ -216,3 +216,47 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
 .sheet .btn { width: 100%; }
 @keyframes sheet-fade { from { opacity: 0 } }
 @keyframes sheet-up { from { transform: translateY(40px); opacity: 0 } }
+
+/* ───────── Multi-negocio ───────── */
+.biz { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.biz-logo { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; background: #fff; padding: 2px; flex: none; }
+.reg-logo { width: 84px; height: 84px; object-fit: contain; border-radius: 20px; background: #fff; padding: 6px; }
+.logo img { width: 28px; height: 28px; object-fit: contain; border-radius: 7px; background: #fff; padding: 2px; }
+
+.mycards { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.minicard { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--r); text-decoration: none; color: var(--ink);
+  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 60%, #000)); }
+.minicard img, .minicard .ph { width: 48px; height: 48px; border-radius: 12px; background: #fff; object-fit: contain; padding: 3px; flex: none;
+  display: grid; place-items: center; font-size: 24px; color: var(--ink); }
+.minicard span { display: grid; flex: 1; min-width: 0; }
+.minicard b { font-size: 18px; color: #fff; }
+.minicard small { color: rgba(255,255,255,.8); }
+.minicard em { font-style: normal; font-weight: 800; color: #fff; white-space: nowrap; }
+
+.biz-editor { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.biz-preview { display: grid; gap: 10px; position: sticky; top: 16px; }
+@media (max-width: 900px) { .biz-editor { grid-template-columns: 1fr; } .biz-preview { position: static; } }
+.biz-row .who b { display: flex; align-items: center; gap: 8px; }
+.row-logo { width: 26px; height: 26px; object-fit: contain; border-radius: 6px; background: #fff; padding: 1px; }
+.row-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+
+/* Afiche con el QR de registro */
+.poster-wrap { display: grid; gap: 16px; justify-items: start; }
+.poster { width: min(100%, 520px); background: #fff; color: #111; border-radius: 22px; padding: 32px 28px; display: grid; gap: 14px;
+  justify-items: center; text-align: center; border-top: 14px solid var(--brand); }
+.poster-logo { width: 110px; height: 110px; object-fit: contain; }
+.poster h2 { font-size: 30px; line-height: 1.1; letter-spacing: -0.02em; }
+.poster-lede { font-size: 20px; font-weight: 700; color: #222; }
+.poster-qr { width: min(100%, 340px); padding: 10px; border: 3px solid var(--brand); border-radius: 18px; }
+.poster-steps { font-size: 15px; color: #444; }
+.poster-url { color: #777; font-family: 'DM Mono', monospace; word-break: break-all; }
+
+@media print {
+  @page { margin: 12mm; }
+  html, body { background: #fff !important; }
+  .no-print, .side, .poster-wrap > .actions { display: none !important; }
+  .admin { display: block; }
+  .content { padding: 0 !important; }
+  .poster { width: 100%; max-width: none; border-radius: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .poster-qr { width: 70%; }
+}

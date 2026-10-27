@@ -32,7 +32,7 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
         <span className="face front">
           <span className="sheen" />
           <span className="row top">
-            <span className="biz">{business}</span>
+            <span className="biz">{card.logo && <img className="biz-logo" src={card.logo} alt="" />}{business}</span>
             <span className="chip" aria-hidden />
           </span>
           {ready ? (

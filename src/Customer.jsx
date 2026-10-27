@@ -4,44 +4,107 @@ import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
 import { nfcSupported, writeNfc } from './Scanner.jsx'
 import { keepTokenInUrl, useInstall } from './install.js'
+import { cardForBiz, loadCards, removeCard, saveCard } from './cards.js'
 
-const KEY = 'fid_token'
-const load = () => { try { return localStorage.getItem(KEY) } catch { return null } }
-const save = (t) => { try { localStorage.setItem(KEY, t) } catch {} }
-
-export default function Customer({ route }) {
-  const [token, setToken] = useState(() => {
-    const m = route.match(/^c\/([0-9a-f-]{36})/i)
-    if (m) { save(m[1]); return m[1] }
-    return load()
-  })
-  const [fresh, setFresh] = useState(false)
-  return token
-    ? <Wallet token={token} fresh={fresh} onReset={() => setToken(null)} />
-    : <Register onDone={(t) => { save(t); setFresh(true); setToken(t) }} />
+const go = (hash) => location.replace(hash)
+const infos = new Map() // datos públicos (y logo) de cada negocio, se piden una sola vez
+const bizInfo = (slug) => {
+  if (!infos.has(slug)) infos.set(slug, rpc('app_business', { p_slug: slug }).catch(() => null))
+  return infos.get(slug)
 }
 
-function Register({ onDone }) {
+// Rutas del cliente: #/r/<negocio> registro · #/c/<token> tarjeta · #/ mis tarjetas
+export default function Customer({ route }) {
+  const [fresh, setFresh] = useState(false)
+  const c = route.match(/^c\/([0-9a-f-]{36})/i)
+  if (c) return <Wallet key={c[1]} token={c[1]} fresh={fresh} onReset={() => { removeCard(c[1]); go('#/') }} />
+  const r = route.match(/^r\/([a-z0-9-]+)/i)
+  if (r) {
+    const slug = r[1].toLowerCase()
+    const had = cardForBiz(slug)
+    if (had) return <Redirect to={`#/c/${had.token}`} />
+    return <Register biz={slug} onDone={(t) => { saveCard(t, slug); setFresh(true); go(`#/c/${t}`) }} />
+  }
+  return <MyCards />
+}
+
+function Redirect({ to }) {
+  useEffect(() => go(to), [to])
+  return null
+}
+
+function MyCards() {
+  const [list, setList] = useState(null)
+  const [err, setErr] = useState(false)
+  useEffect(() => {
+    const saved = loadCards()
+    if (saved.length === 0) return setList([])
+    rpc('app_cards', { p_tokens: saved.map((x) => x.token) })
+      .then((cs) => {
+        const alive = new Set(cs.map((x) => x.token))
+        saved.forEach((x) => !alive.has(x.token) && removeCard(x.token))
+        cs.forEach((x) => saveCard(x.token, x.biz))
+        if (cs.length === 1) go(`#/c/${cs[0].token}`)
+        else setList(cs)
+      })
+      .catch(() => setErr(true))
+  }, [])
+  if (err) return <main className="shell"><p className="lede">No se pudieron cargar tus tarjetas. Revisa tu conexión.</p></main>
+  if (!list) return <main className="shell"><p className="lede">Cargando tus tarjetas…</p></main>
+  if (list.length === 0) return (
+    <main className="shell narrow">
+      <h1 className="hero">Tu tarjeta de fidelidad</h1>
+      <p className="lede">Escanea el código QR del negocio para obtener tu tarjeta y empezar a sumar estrellas.</p>
+    </main>
+  )
+  return (
+    <main className="shell">
+      <h1 className="hero sm">Mis tarjetas</h1>
+      <ul className="mycards">
+        {list.map((x) => (
+          <li key={x.token}>
+            <a href={`#/c/${x.token}`} className="minicard" style={{ '--brand': x.color }}>
+              {x.logo ? <img src={x.logo} alt="" /> : <span className="ph" aria-hidden>★</span>}
+              <span><b>{x.business}</b><small>{x.name}</small></span>
+              <em>{x.bonus_days > 0 ? '🎁 regalo' : `${Math.min(x.stars, x.goal)}/${x.goal} ★`}</em>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </main>
+  )
+}
+
+function Register({ biz, onDone }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
-  const [plans, setPlans] = useState([])
+  const [info, setInfo] = useState(undefined)
   const [plan, setPlan] = useState(null)
+  const plans = info?.plans || []
   useEffect(() => {
-    rpc('app_plans').then((p) => { setPlans(p || []); if (p?.length) setPlan(p[0].id) }).catch(() => {})
-  }, [])
+    bizInfo(biz).then((b) => { setInfo(b); if (b?.plans?.length) setPlan(b.plans[0].id) })
+  }, [biz])
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setErr('')
     try {
-      const r = await rpc('app_register', { p_name: name, p_phone: phone, p_plan: plan })
+      const r = await rpc('app_register', { p_biz: biz, p_name: name, p_phone: phone, p_plan: plan })
       onDone(r.token)
     } catch (ex) { setErr(ex.message); setBusy(false) }
   }
+  if (info === undefined) return <main className="shell"><p className="lede">Cargando…</p></main>
+  if (!info) return (
+    <main className="shell narrow">
+      <h1 className="hero sm">Negocio no disponible</h1>
+      <p className="lede">Este código QR no está activo. Pide al negocio un código nuevo.</p>
+    </main>
+  )
   return (
-    <main className="shell">
-      <h1 className="hero">Tu tarjeta de estrellas</h1>
+    <main className="shell" style={{ '--brand': info.color }}>
+      {info.logo && <img className="reg-logo" src={info.logo} alt={info.name} />}
+      <h1 className="hero">Tu tarjeta de {info.name}</h1>
       <p className="lede">Regístrate una vez. Cada visita suma una estrella y las estrellas se canjean por premios.</p>
       <form className="panel form" onSubmit={submit}>
         <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} placeholder="Ana Pérez" /></label>
@@ -66,6 +129,8 @@ function Register({ onDone }) {
 
 function Wallet({ token, fresh, onReset }) {
   const install = useInstall()
+  const [logo, setLogo] = useState(null)
+  const many = loadCards().length > 1
   const [showInstall, setShowInstall] = useState(fresh)
   const [card, setCard] = useState(null)
   const [flipped, setFlipped] = useState(false)
@@ -77,7 +142,7 @@ function Wallet({ token, fresh, onReset }) {
   const refresh = useCallback(async () => {
     try {
       const c = await rpc('app_get_card', { p_token: token })
-      if (!c) { try { localStorage.removeItem(KEY) } catch {} ; return onReset() }
+      if (!c) return onReset()
       if (prev.current !== null && c.stars > prev.current) {
         setFlipped(false); setStamped(true)
         navigator.vibrate?.([60, 40, 120])
@@ -88,10 +153,12 @@ function Wallet({ token, fresh, onReset }) {
       }
       prev.current = c.stars
       setCard(c)
+      if (c.biz) saveCard(token, c.biz)
     } catch {}
   }, [token, onReset])
 
   useEffect(() => keepTokenInUrl(token), [token])
+  useEffect(() => { if (card?.biz) bizInfo(card.biz).then((b) => setLogo(b?.logo || null)) }, [card?.biz])
 
   useEffect(() => {
     refresh()
@@ -111,12 +178,6 @@ function Wallet({ token, fresh, onReset }) {
       else { await navigator.clipboard.writeText(link); setMsg('Enlace copiado. Ábrelo en otro dispositivo para ver tu tarjeta.') }
     } catch {}
   }
-  const gwallet = async () => {
-    setMsg('Preparando tu tarjeta…')
-    const { data, error } = await supabase.functions.invoke('wallet-pass', { body: { token, action: 'save' } })
-    if (error || !data?.url) return setMsg('Google Wallet aún no está disponible. Usa el enlace por ahora.')
-    window.location.href = data.url
-  }
   const nfc = async () => {
     try { setMsg('Acerca una etiqueta NFC al teléfono…'); await writeNfc(card.code); setMsg('Etiqueta NFC grabada.') }
     catch { setMsg('No se pudo grabar la etiqueta NFC.') }
@@ -125,12 +186,12 @@ function Wallet({ token, fresh, onReset }) {
   return (
     <main className="shell wallet" style={{ '--brand': card.color }}>
       <header className="hello">
-        <span>Hola, {card.name.split(' ')[0]}</span>
+        <span>{many && <><a className="link" href="#/">‹ Mis tarjetas</a> · </>}Hola, {card.name.split(' ')[0]}</span>
         <button className="link" onClick={() => setFlipped((f) => !f)}>{flipped ? 'Ver estrellas' : 'Ver compras y QR'}</button>
       </header>
 
       <Fireworks show={stamped} />
-      <Card card={card} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
+      <Card card={{ ...card, logo }} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
 
       <p className="hint">
         {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Muestra tu tarjeta en caja para sumar.'}
@@ -172,7 +233,6 @@ function Wallet({ token, fresh, onReset }) {
         <p className="muted">Instala tu tarjeta como app para abrirla con un toque. En caja basta con acercar el teléfono a la etiqueta NFC o mostrar el QR.</p>
         <div className="actions">
           {!install.installed && <button className="btn primary" onClick={() => setShowInstall(true)}>Instalar como app</button>}
-          <button className={`btn${install.installed ? ' primary' : ''}`} onClick={gwallet}>Agregar a Google Wallet</button>
           <button className="btn" onClick={share}>Compartir enlace</button>
           {nfcSupported() && <button className="btn" onClick={nfc}>Grabar en etiqueta NFC</button>}
         </div>

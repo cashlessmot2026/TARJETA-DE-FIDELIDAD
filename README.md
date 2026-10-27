@@ -4,12 +4,13 @@ Tarjeta de estrellas con formato de tarjeta bancaria (gira: frente = estrellas, 
 React + Vite + Supabase.
 
 ## Rutas
-- `#/` cliente: registro y tarjeta.
-- `#/c/<token>` abre la tarjeta del cliente en otro dispositivo.
-- `#/admin` panel oculto (no hay enlace en la interfaz). PIN inicial **1234**: cámbialo en Ajustes.
+- `#/super` superadmin: crea negocios (nombre, correo, logo, color, PIN del admin) y descarga su QR/afiche. PIN maestro inicial = el PIN de admin que había (cámbialo en Ajustes).
+- `#/admin/<negocio>` panel del negocio (clientes, planes, premios, validar, código QR, ajustes). `#/admin` pide el enlace del negocio.
+- `#/r/<negocio>` registro del cliente (es lo que abre el QR del afiche).
+- `#/c/<token>` tarjeta del cliente · `#/` «Mis tarjetas» (una por negocio).
 
 ## Puesta en marcha
-1. En Supabase → SQL Editor ejecuta `supabase/schema.sql`.
+1. En Supabase → SQL Editor ejecuta `supabase/schema.sql` y luego `supabase/multinegocio.sql`.
 2. `npm install && npm run dev`
 
 El anon key solo puede llamar a las funciones RPC; las tablas tienen RLS sin políticas.
