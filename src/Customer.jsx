@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
 import { nfcSupported, writeNfc } from './Scanner.jsx'
+import { keepTokenInUrl, useInstall } from './install.js'
 
 const KEY = 'fid_token'
 const load = () => { try { return localStorage.getItem(KEY) } catch { return null } }
@@ -14,7 +15,10 @@ export default function Customer({ route }) {
     if (m) { save(m[1]); return m[1] }
     return load()
   })
-  return token ? <Wallet token={token} onReset={() => setToken(null)} /> : <Register onDone={(t) => { save(t); setToken(t) }} />
+  const [fresh, setFresh] = useState(false)
+  return token
+    ? <Wallet token={token} fresh={fresh} onReset={() => setToken(null)} />
+    : <Register onDone={(t) => { save(t); setFresh(true); setToken(t) }} />
 }
 
 function Register({ onDone }) {
@@ -60,7 +64,9 @@ function Register({ onDone }) {
   )
 }
 
-function Wallet({ token, onReset }) {
+function Wallet({ token, fresh, onReset }) {
+  const install = useInstall()
+  const [showInstall, setShowInstall] = useState(fresh)
   const [card, setCard] = useState(null)
   const [flipped, setFlipped] = useState(false)
   const [stamped, setStamped] = useState(false)
@@ -84,6 +90,8 @@ function Wallet({ token, onReset }) {
       setCard(c)
     } catch {}
   }, [token, onReset])
+
+  useEffect(() => keepTokenInUrl(token), [token])
 
   useEffect(() => {
     refresh()
@@ -163,14 +171,39 @@ function Wallet({ token, onReset }) {
 
       <section className="panel">
         <h2>Guardar en el teléfono</h2>
-        <p className="muted">Guarda el enlace en tu pantalla de inicio (menú del navegador → «Agregar a inicio») y úsalo como llave. En caja basta con acercar el teléfono a la etiqueta NFC o mostrar el QR.</p>
+        <p className="muted">Instala tu tarjeta como app para abrirla con un toque. En caja basta con acercar el teléfono a la etiqueta NFC o mostrar el QR.</p>
         <div className="actions">
-          <button className="btn primary" onClick={gwallet}>Agregar a Google Wallet</button>
+          {!install.installed && <button className="btn primary" onClick={() => setShowInstall(true)}>Instalar como app</button>}
+          <button className={`btn${install.installed ? ' primary' : ''}`} onClick={gwallet}>Agregar a Google Wallet</button>
           <button className="btn" onClick={share}>Compartir enlace</button>
           {nfcSupported() && <button className="btn" onClick={nfc}>Grabar en etiqueta NFC</button>}
         </div>
         {msg && <p className="muted" role="status">{msg}</p>}
       </section>
+
+      {showInstall && !install.installed && <InstallSheet install={install} welcome={fresh} onClose={() => setShowInstall(false)} />}
     </main>
+  )
+}
+
+function InstallSheet({ install, welcome, onClose }) {
+  const steps = {
+    ios: <ol><li>Toca el botón <b>Compartir</b> <span aria-hidden>⬆️</span> en la barra de Safari.</li><li>Elige <b>«Agregar a inicio»</b>.</li><li>Toca <b>Agregar</b>. Tu tarjeta quedará como app en tu pantalla.</li></ol>,
+    inapp: <ol><li>Toca el menú <b>⋮</b> o <b>…</b> de esta pantalla.</li><li>Elige <b>«Abrir en Chrome»</b> o <b>«Abrir en el navegador»</b>.</li><li>Ahí podrás instalar tu tarjeta como app.</li></ol>,
+    manual: <ol><li>Toca el menú <b>⋮</b> del navegador.</li><li>Elige <b>«Instalar aplicación»</b> o <b>«Agregar a pantalla de inicio»</b>.</li></ol>,
+  }
+  const go = async () => { if (await install.prompt()) onClose() }
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="install-title" onClick={(e) => e.stopPropagation()}>
+        <img src="./icon-192.png" alt="" width="64" height="64" />
+        <h2 id="install-title">{welcome ? '¡Tu tarjeta está lista!' : 'Instala tu tarjeta'}</h2>
+        <p className="muted">Descárgala como app para tenerla siempre a mano, sin buscar el enlace.</p>
+        {install.platform === 'prompt'
+          ? <button className="btn primary" onClick={go}>Descargar app</button>
+          : steps[install.platform]}
+        <button className="link" onClick={onClose}>Ahora no</button>
+      </section>
+    </div>
   )
 }
