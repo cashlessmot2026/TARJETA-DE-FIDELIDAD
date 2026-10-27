@@ -153,21 +153,19 @@ function Wallet({ token, fresh, onReset }) {
         <p><b>{card.bonus_days || 0}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}</p>
       </section>
 
-      <section className="panel">
-        <h2>Premios</h2>
-        {card.promos.length === 0 && <p className="muted">El negocio aún no publicó premios.</p>}
-        <ul className="promos">
-          {card.promos.map((p) => {
-            const ok = card.stars >= p.stars_required
-            return (
-              <li key={p.id} className={ok ? 'ok' : ''}>
-                <div><b>{p.title}</b><span>{p.description}</span></div>
-                <em>{`${p.stars_required} días · +${p.reward_days} gratis`}</em>
+      {card.rewards?.length > 0 && (
+        <section className="panel">
+          <h2>Premios</h2>
+          <ul className="promos">
+            {card.rewards.map((r) => (
+              <li key={r.id} className={r.stars_required && card.stars >= r.stars_required ? 'ok' : ''}>
+                <div><b>{r.title}</b><span>{r.description}</span></div>
+                {r.stars_required && <em>{Math.min(card.stars, r.stars_required)}/{r.stars_required} ★</em>}
               </li>
-            )
-          })}
-        </ul>
-      </section>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="panel">
         <h2>Guardar en el teléfono</h2>

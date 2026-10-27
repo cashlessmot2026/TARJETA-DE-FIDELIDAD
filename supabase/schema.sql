@@ -473,3 +473,90 @@ grant execute on function
   public.admin_save_promo(text, uuid, text, text, int, boolean, int),
   public.admin_delete_promo(text, uuid), public.admin_save_settings(text, text, text, int, text)
 to anon, authenticated;
+
+-- ───────── Premios definidos por el admin (solo se ven cuando el admin los autoriza) ─────────
+create table if not exists public.rewards (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text,
+  stars_required int check (stars_required is null or stars_required > 0),  -- opcional
+  visible boolean not null default false,                                    -- autorizado por el admin
+  created_at timestamptz not null default now()
+);
+alter table public.rewards enable row level security;
+
+create or replace function public.admin_rewards(p_pin text)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  return coalesce((select json_agg(r) from (
+    select * from rewards order by stars_required nulls last, created_at) r), '[]'::json);
+end $$;
+
+create or replace function public.admin_save_reward(p_pin text, p_id uuid, p_title text, p_desc text,
+                                                   p_stars int, p_visible boolean)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  if length(trim(coalesce(p_title,''))) < 2 then raise exception 'Escribe el nombre del premio'; end if;
+  if p_id is null then
+    insert into rewards(title, description, stars_required, visible)
+    values (trim(p_title), nullif(trim(p_desc),''), p_stars, coalesce(p_visible, false));
+  else
+    update rewards set title = trim(p_title), description = nullif(trim(p_desc),''),
+      stars_required = p_stars, visible = coalesce(p_visible, false) where id = p_id;
+  end if;
+end $$;
+
+create or replace function public.admin_set_reward_visible(p_pin text, p_id uuid, p_visible boolean)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  update rewards set visible = p_visible where id = p_id;
+end $$;
+
+create or replace function public.admin_delete_reward(p_pin text, p_id uuid)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform _require_admin(p_pin);
+  delete from rewards where id = p_id;
+end $$;
+
+-- app_get_card ahora incluye solo los premios autorizados (visible = true).
+create or replace function public.app_get_card(p_token uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare v customers; pr promotions; nx promotions;
+begin
+  select * into v from customers where token = p_token;
+  if not found then return null; end if;
+  pr := _plan_of(v.plan_id);
+  select * into nx from promotions where active and stars_required > pr.stars_required
+   order by stars_required limit 1;
+  return json_build_object(
+    'name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days,
+    'since', v.created_at,
+    'goal', pr.stars_required,
+    'plan', json_build_object('id', pr.id, 'title', pr.title, 'days', pr.stars_required, 'reward_days', pr.reward_days),
+    'can_upgrade', (v.stars >= pr.stars_required and nx.id is not null),
+    'next_plan', case when nx.id is null then null else
+        json_build_object('id', nx.id, 'title', nx.title, 'days', nx.stars_required, 'reward_days', nx.reward_days) end,
+    'business', _setting('business_name'),
+    'color', _setting('brand_color'),
+    'visits', coalesce((select json_agg(x) from (
+        select created_at as at, delta, kind from visits
+        where customer_id = v.id order by created_at desc limit 12) x), '[]'::json),
+    'promos', coalesce((select json_agg(p) from (
+        select id, title, description, stars_required, reward_days from promotions
+        where active order by stars_required) p), '[]'::json),
+    'rewards', coalesce((select json_agg(r) from (
+        select id, title, description, stars_required from rewards
+        where visible order by stars_required nulls last, created_at) r), '[]'::json)
+  );
+end $$;
+
+revoke all on function public.admin_rewards(text), public.admin_save_reward(text, uuid, text, text, int, boolean),
+  public.admin_set_reward_visible(text, uuid, boolean), public.admin_delete_reward(text, uuid) from public, anon, authenticated;
+grant execute on function
+  public.admin_rewards(text), public.admin_save_reward(text, uuid, text, text, int, boolean),
+  public.admin_set_reward_visible(text, uuid, boolean), public.admin_delete_reward(text, uuid)
+to anon, authenticated;

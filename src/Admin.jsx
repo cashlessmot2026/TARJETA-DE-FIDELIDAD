@@ -33,7 +33,7 @@ function Gate({ onOk }) {
   )
 }
 
-const TABS = [['panel', 'Panel'], ['clientes', 'Clientes'], ['promos', 'Promociones'], ['validar', 'Validar'], ['ajustes', 'Ajustes']]
+const TABS = [['panel', 'Panel'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Validar'], ['ajustes', 'Ajustes']]
 
 function Dash({ pin, onExit }) {
   const [tab, setTab] = useState('panel')
@@ -48,6 +48,7 @@ function Dash({ pin, onExit }) {
         {tab === 'panel' && <Panel pin={pin} />}
         {tab === 'clientes' && <Clientes pin={pin} />}
         {tab === 'promos' && <Promos pin={pin} />}
+        {tab === 'premios' && <Premios pin={pin} />}
         {tab === 'validar' && <Validar pin={pin} />}
         {tab === 'ajustes' && <Ajustes pin={pin} />}
       </section>
@@ -185,7 +186,7 @@ function Promos({ pin }) {
   const del = async (p) => { if (confirm(`¿Eliminar «${p.title}»?`)) { await rpc('admin_delete_promo', { p_pin: pin, p_id: p.id }); reload() } }
   return (
     <>
-      <h1 className="h1">Planes y premios</h1>
+      <h1 className="h1">Planes</h1>
       {err && <p className="err">{err}</p>}
       <form className="panel form grid" onSubmit={save}>
         <h2>{f.id ? 'Editar plan' : 'Nuevo plan'}</h2>
@@ -206,6 +207,55 @@ function Promos({ pin }) {
               <div><b>{p.title}</b><span>{p.description}</span></div>
               <em>{p.stars_required} días · +{p.reward_days} regalo{p.active ? '' : ' · oculta'}</em>
               <div className="actions"><button className="link" onClick={() => setF(p)}>Editar</button><button className="link danger" onClick={() => del(p)}>Eliminar</button></div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
+  )
+}
+
+function Premios({ pin }) {
+  const [list, reload, err] = useRpc('admin_rewards', pin)
+  const blank = { id: null, title: '', description: '', stars_required: '', visible: false }
+  const [f, setF] = useState(blank)
+  const save = async (e) => {
+    e.preventDefault()
+    try {
+      await rpc('admin_save_reward', { p_pin: pin, p_id: f.id, p_title: f.title, p_desc: f.description || '', p_stars: f.stars_required ? Number(f.stars_required) : null, p_visible: f.visible })
+      setF(blank); reload()
+    } catch (x) { alert(x.message) }
+  }
+  const toggle = async (r) => { try { await rpc('admin_set_reward_visible', { p_pin: pin, p_id: r.id, p_visible: !r.visible }); reload() } catch (x) { alert(x.message) } }
+  const del = async (r) => { if (confirm(`¿Eliminar «${r.title}»?`)) { await rpc('admin_delete_reward', { p_pin: pin, p_id: r.id }); reload() } }
+  return (
+    <>
+      <h1 className="h1">Premios</h1>
+      <p className="muted">Los clientes solo ven los premios que autorices.</p>
+      {err && <p className="err">{err}</p>}
+      <form className="panel form grid" onSubmit={save}>
+        <h2>{f.id ? 'Editar premio' : 'Nuevo premio'}</h2>
+        <label>Premio<input required minLength={2} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Camiseta del gimnasio" /></label>
+        <label>Estrellas necesarias <small>(opcional)</small><input type="number" min="1" value={f.stars_required ?? ''} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
+        <label className="wide">Descripción<input value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Válido hasta agotar existencias" /></label>
+        <label className="check"><input type="checkbox" checked={f.visible} onChange={(e) => setF({ ...f, visible: e.target.checked })} />Autorizado: visible para los clientes</label>
+        <div className="actions">
+          <button className="btn primary">{f.id ? 'Guardar cambios' : 'Crear premio'}</button>
+          {f.id && <button type="button" className="btn" onClick={() => setF(blank)}>Cancelar</button>}
+        </div>
+      </form>
+      <div className="panel">
+        {list && list.length === 0 && <p className="muted">Aún no has creado premios.</p>}
+        <ul className="promos">
+          {(list || []).map((r) => (
+            <li key={r.id} className={r.visible ? 'ok' : 'off'}>
+              <div><b>{r.title}</b><span>{r.description}</span></div>
+              <em>{r.stars_required ? `${r.stars_required} estrellas · ` : ''}{r.visible ? 'Visible' : 'Oculto'}</em>
+              <div className="actions">
+                <button className="link" onClick={() => toggle(r)}>{r.visible ? 'Ocultar' : 'Autorizar'}</button>
+                <button className="link" onClick={() => setF(r)}>Editar</button>
+                <button className="link danger" onClick={() => del(r)}>Eliminar</button>
+              </div>
             </li>
           ))}
         </ul>
