@@ -1,7 +1,7 @@
 # Tarjetas de fidelidad (gimnasio) · Resumen para continuar
 
 Repo: https://github.com/cashlessmot2026/TARJETA-DE-FIDELIDAD (rama `main`, publica en GitHub Pages con Actions)
-Supabase: proyecto `pirshjvxhxrqfqyajuxp` · PIN admin por defecto: `1234` (cámbialo en Ajustes)
+Supabase: proyecto `shrkfzuxpmwkyyqjzcmb` (antes `pirshjvxhxrqfqyajuxp`) · PIN admin/superadmin por defecto: `1234` (cámbialo)
 Stack: Vite + React (`src/`), Supabase (RPC `security definer`, RLS sin políticas), Edge Function `wallet-pass` (Google Wallet).
 
 ## Qué hace la app hoy
