@@ -118,7 +118,7 @@ function Clientes({ pin }) {
   const [list, reload, err] = useRpc('admin_customers', pin)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(null)
-  // «+» suma un día con la lógica del plan (sin el límite de 12 h); «−» solo quita una estrella.
+  // «+» suma un día con la lógica del plan (sin la pausa de 5 min); «−» solo quita una estrella.
   const adj = async (c, delta) => {
     setBusy(c.id)
     try {
@@ -279,7 +279,7 @@ function Estrellas({ pin, biz }) {
   return (
     <>
       <h1 className="h1 no-print">QR de estrellas</h1>
-      <p className="muted no-print">Ponlo en caja o en una pantalla. En cada visita el cliente lo escanea desde su tarjeta («Sumar estrella») y se suma su estrella (una cada 12 h). Es distinto al QR de registro.</p>
+      <p className="muted no-print">Ponlo en caja o en una pantalla. En cada visita el cliente lo escanea desde su tarjeta («Sumar estrella») y se suma su estrella (puede sumar varias en el día, con 5 min entre una y otra). Es distinto al QR de registro.</p>
       <div className="panel visit-tools no-print">
         <h2>Etiqueta NFC</h2>
         <p className="muted">Graba este mismo código en una etiqueta NFC y pégala en caja. Al acercar el teléfono, el cliente suma su estrella (Android y iPhone).</p>

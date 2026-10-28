@@ -185,9 +185,6 @@ function Wallet({ token, fresh, onReset }) {
   if (!card) return <main className="shell"><p className="lede">Cargando tu tarjeta…</p></main>
 
   const next = card.promos.find((p) => p.stars_required > card.stars)
-  // Mismo límite que el servidor (_checkin): una estrella cada 12 h, sin contar los ajustes manuales del admin.
-  const lastStar = card.visits.find((v) => v.delta > 0 && ['scan', 'nfc', 'day', 'qr', 'phone'].includes(v.kind))
-  const waitHours = lastStar ? Math.ceil((new Date(lastStar.at).getTime() + 12 * 3600e3 - Date.now()) / 3600e3) : 0
   const link = `${location.origin}${location.pathname}#/c/${token}`
   const share = async () => {
     try {
@@ -206,7 +203,7 @@ function Wallet({ token, fresh, onReset }) {
       <Fireworks show={stamped} />
       <Card card={{ ...card, logo }} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
 
-      <ScanButton waitHours={waitHours} />
+      <ScanButton />
 
       <p className="hint">
         {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Escanea el QR de estrellas del negocio para sumar.'}
@@ -283,21 +280,14 @@ function InstallSheet({ install, welcome, onClose }) {
 }
 
 // Lee el QR de estrellas (cámara) o la etiqueta NFC del negocio y lleva a #/v/<negocio>/<código>.
-function ScanButton({ waitHours = 0 }) {
+function ScanButton() {
   const [open, setOpen] = useState(false)
   const [bad, setBad] = useState(false)
   const close = () => { setOpen(false); setBad(false) }
   const nfc = useNfcText((t) => { const r = parseVisit(t); if (r) go(`#/${r}/nfc`); else setBad(true) }, open)
   return (
     <>
-      {waitHours > 0 ? (
-        <div className="done-today" role="status">
-          <button className="btn big" disabled>✓ Ya sumaste tu estrella de hoy</button>
-          <small>Podrás sumar otra en {waitHours} {waitHours === 1 ? 'hora' : 'horas'}.</small>
-        </div>
-      ) : (
-        <button className="btn primary big" onClick={() => { unlockVoice(); setOpen(true) }}>★ Sumar estrella</button>
-      )}
+      <button className="btn primary big" onClick={() => { unlockVoice(); setOpen(true) }}>★ Sumar estrella</button>
       {open && (
         <div className="sheet-bg" onClick={close}>
           <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="scan-title" onClick={(e) => e.stopPropagation()}>

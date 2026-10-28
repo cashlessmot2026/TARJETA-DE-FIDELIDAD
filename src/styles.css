@@ -269,5 +269,3 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
 .nfc-live { display: flex; align-items: center; gap: 8px; color: var(--mint); font-size: 14px; font-weight: 600; }
 .nfc-live .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--mint); animation: nfc-pulse 1.4s ease-in-out infinite; }
 @keyframes nfc-pulse { 50% { opacity: .3; transform: scale(.7); } }
-.done-today { display: grid; gap: 6px; text-align: center; }
-.done-today small { color: var(--mute); }
