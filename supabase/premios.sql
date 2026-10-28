@@ -1,6 +1,6 @@
 -- ═════════════════════════════════════════════════════════════════════════════
 -- PREMIOS EN VEZ DE PLANES: cada escaneo suma 1 estrella, las estrellas se acumulan y el cliente
--- las canjea por los premios que el admin autoriza (se descuentan al canjear; la tarjeta sigue activa).
+-- las canjea por los premios que el admin autoriza (al canjear el conteo vuelve a 0; la tarjeta sigue activa).
 -- Ejecutar después de visitas.sql. Se puede ejecutar más de una vez.
 -- La tabla promotions (planes) queda guardada pero ya no se usa.
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -109,7 +109,7 @@ begin
         where business_id = b and visible and stars_required > 0 order by stars_required) r), '[]'::json));
 end $$;
 
--- Canjear un premio: descuenta sus estrellas (la tarjeta sigue activa).
+-- Canjear un premio: el conteo de estrellas vuelve a 0 (la tarjeta sigue activa).
 create or replace function public.admin_redeem_reward(p_biz text, p_pin text, p_code text, p_reward uuid)
 returns json language plpgsql security definer set search_path = public, extensions as $$
 declare b uuid := _biz_auth(p_biz, p_pin); v customers := _cust(b, p_code); r rewards;
@@ -119,8 +119,8 @@ begin
   if v.stars < r.stars_required then
     raise exception 'A % le faltan % estrellas para «%»', v.name, r.stars_required - v.stars, r.title;
   end if;
-  update customers set stars = stars - r.stars_required where id = v.id returning * into v;
-  insert into visits(customer_id, delta, kind, note) values (v.id, -r.stars_required, 'redeem', r.title);
+  insert into visits(customer_id, delta, kind, note) values (v.id, -v.stars, 'redeem', r.title);
+  update customers set stars = 0 where id = v.id returning * into v;
   return json_build_object('name', v.name, 'code', v.code, 'stars', v.stars, 'bonus_days', v.bonus_days, 'reward', r.title);
 end $$;
 

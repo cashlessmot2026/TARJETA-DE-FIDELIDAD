@@ -178,7 +178,7 @@ function Premios({ pin }) {
   return (
     <>
       <h1 className="h1">Premios</h1>
-      <p className="muted">Cada compra suma 1 estrella. Los clientes ven y canjean solo los premios que autorices; al canjear se descuentan las estrellas del premio.</p>
+      <p className="muted">Cada compra suma 1 estrella. Los clientes ven y canjean solo los premios que autorices; al canjear, el conteo de estrellas del cliente vuelve a 0.</p>
       {err && <p className="err">{err}</p>}
       <form className="panel form grid" onSubmit={save}>
         <h2>{f.id ? 'Editar premio' : 'Nuevo premio'}</h2>
@@ -291,10 +291,10 @@ function Validar({ pin }) {
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
   const redeem = async (rw) => {
-    if (!confirm(`¿Canjear «${rw.title}»? Se descuentan ${rw.stars_required} estrellas.`)) return
+    if (!confirm(`¿Canjear «${rw.title}»? El conteo de estrellas de ${res.name} vuelve a 0.`)) return
     try {
       const r = await rpc('admin_redeem_reward', { ...pin, p_code: res.code, p_reward: rw.id })
-      setRes({ ...res, ...r, note: `«${r.reward}» canjeado. Le quedan ${r.stars} estrellas.` })
+      setRes({ ...res, ...r, note: `«${r.reward}» canjeado. Sus estrellas volvieron a 0.` })
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
 

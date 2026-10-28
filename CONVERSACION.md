@@ -49,7 +49,7 @@ Funciones RPC:
 ## Reglas de negocio
 - Cada compra = 1 estrella (el cliente escanea el QR de estrellas o la etiqueta NFC). Varias por día; pausa de 3 min entre estrellas.
 - Las estrellas se acumulan. La tarjeta muestra el avance al siguiente premio visible.
-- En «Canjear» el admin escanea el QR del cliente y canjea un premio: se descuentan sus estrellas y la tarjeta sigue activa.
+- En «Canjear» el admin escanea el QR del cliente y canjea un premio: el conteo de estrellas vuelve a 0 y la tarjeta sigue activa.
 - Los días de regalo que quedaron de los planes se pueden seguir redimiendo.
 
 ## Archivos clave
