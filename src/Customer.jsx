@@ -2,7 +2,7 @@ import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
-import { nfcSupported, writeNfc } from './Scanner.jsx'
+import { QrScanner, parseVisit } from './Scanner.jsx'
 import { keepTokenInUrl, useInstall } from './install.js'
 import { cardForBiz, loadCards, removeCard, saveCard } from './cards.js'
 
@@ -13,9 +13,11 @@ const bizInfo = (slug) => {
   return infos.get(slug)
 }
 
-// Rutas del cliente: #/r/<negocio> registro · #/c/<token> tarjeta · #/ mis tarjetas
+// Rutas del cliente: #/r/<negocio> registro · #/c/<token> tarjeta · #/v/<negocio>/<código> sumar estrella · #/ mis tarjetas
 export default function Customer({ route }) {
   const [fresh, setFresh] = useState(false)
+  const v = route.match(/^v\/([a-z0-9-]+)\/([A-Za-z0-9]{6,16})(\/nfc)?/i)
+  if (v) return <Checkin key={route} biz={v[1].toLowerCase()} code={v[2].toUpperCase()} via={v[3] ? 'nfc' : 'qr'} />
   const c = route.match(/^c\/([0-9a-f-]{36})/i)
   if (c) return <Wallet key={c[1]} token={c[1]} fresh={fresh} onReset={() => { removeCard(c[1]); go('#/') }} />
   const r = route.match(/^r\/([a-z0-9-]+)/i)
@@ -60,6 +62,7 @@ function MyCards() {
   return (
     <main className="shell">
       <h1 className="hero sm">Mis tarjetas</h1>
+      <ScanButton />
       <ul className="mycards">
         {list.map((x) => (
           <li key={x.token}>
@@ -105,10 +108,10 @@ function Register({ biz, onDone }) {
     <main className="shell" style={{ '--brand': info.color }}>
       {info.logo && <img className="reg-logo" src={info.logo} alt={info.name} />}
       <h1 className="hero">Tu tarjeta de {info.name}</h1>
-      <p className="lede">Regístrate una vez. Cada visita suma una estrella y las estrellas se canjean por premios.</p>
+      <p className="lede">Regístrate una vez. En cada visita escanea el QR de estrellas del negocio y suma una estrella.</p>
       <form className="panel form" onSubmit={submit}>
         <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} placeholder="Ana Pérez" /></label>
-        <label>Teléfono <small>(opcional)</small><input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" placeholder="555 123 4567" /></label>
+        <label>Teléfono <small>(lo usas para sumar estrellas si no abres la app)</small><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" required minLength={7} placeholder="300 123 4567" /></label>
         {plans.length > 0 && (
           <fieldset className="plans">
             <legend>Elige tu plan</legend>
@@ -178,10 +181,6 @@ function Wallet({ token, fresh, onReset }) {
       else { await navigator.clipboard.writeText(link); setMsg('Enlace copiado. Ábrelo en otro dispositivo para ver tu tarjeta.') }
     } catch {}
   }
-  const nfc = async () => {
-    try { setMsg('Acerca una etiqueta NFC al teléfono…'); await writeNfc(card.code); setMsg('Etiqueta NFC grabada.') }
-    catch { setMsg('No se pudo grabar la etiqueta NFC.') }
-  }
 
   return (
     <main className="shell wallet" style={{ '--brand': card.color }}>
@@ -193,9 +192,13 @@ function Wallet({ token, fresh, onReset }) {
       <Fireworks show={stamped} />
       <Card card={{ ...card, logo }} flipped={flipped} onFlip={() => setFlipped((f) => !f)} justStamped={stamped} />
 
+      <ScanButton />
+
       <p className="hint">
-        {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Muestra tu tarjeta en caja para sumar.'}
+        {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Escanea el QR de estrellas del negocio para sumar.'}
       </p>
+
+      {card.has_phone === false && <PhoneAsk token={token} onDone={refresh} />}
 
       {card.can_upgrade && card.next_plan && !skipUp && (
         <section className="panel upgrade">
@@ -230,11 +233,10 @@ function Wallet({ token, fresh, onReset }) {
 
       <section className="panel">
         <h2>Guardar en el teléfono</h2>
-        <p className="muted">Instala tu tarjeta como app para abrirla con un toque. En caja basta con acercar el teléfono a la etiqueta NFC o mostrar el QR.</p>
+        <p className="muted">Instala tu tarjeta como app para abrirla con un toque. En el negocio toca «Sumar estrella» y escanea su QR, o acerca el teléfono a su etiqueta NFC.</p>
         <div className="actions">
           {!install.installed && <button className="btn primary" onClick={() => setShowInstall(true)}>Instalar como app</button>}
           <button className="btn" onClick={share}>Compartir enlace</button>
-          {nfcSupported() && <button className="btn" onClick={nfc}>Grabar en etiqueta NFC</button>}
         </div>
         {msg && <p className="muted" role="status">{msg}</p>}
       </section>
@@ -263,5 +265,133 @@ function InstallSheet({ install, welcome, onClose }) {
         <button className="link" onClick={onClose}>Ahora no</button>
       </section>
     </div>
+  )
+}
+
+// Abre la cámara para leer el QR de estrellas del negocio y lleva a #/v/<negocio>/<código>.
+function ScanButton() {
+  const [open, setOpen] = useState(false)
+  const [bad, setBad] = useState(false)
+  const close = () => { setOpen(false); setBad(false) }
+  return (
+    <>
+      <button className="btn primary big" onClick={() => setOpen(true)}>★ Sumar estrella</button>
+      {open && (
+        <div className="sheet-bg" onClick={close}>
+          <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="scan-title" onClick={(e) => e.stopPropagation()}>
+            <h2 id="scan-title">Sumar estrella</h2>
+            <p className="muted">Apunta la cámara al QR de estrellas del negocio.</p>
+            <div className="full">
+              <QrScanner active parse={(t) => parseVisit(t) || (setBad(true), null)} onCode={(r) => go(`#/${r}`)} />
+            </div>
+            {bad && <p className="err">Ese no es un QR de estrellas. Busca el que dice «Escanea y suma tu estrella».</p>}
+            <button className="link" onClick={close}>Cancelar</button>
+          </section>
+        </div>
+      )}
+    </>
+  )
+}
+
+function PhoneAsk({ token, onDone }) {
+  const [phone, setPhone] = useState('')
+  const [err, setErr] = useState('')
+  const save = async (e) => {
+    e.preventDefault()
+    try { await rpc('app_set_phone', { p_token: token, p_phone: phone }); onDone() }
+    catch (x) { setErr(x.message) }
+  }
+  return (
+    <form className="panel form" onSubmit={save}>
+      <h2>Agrega tu teléfono</h2>
+      <p className="muted">Lo necesitas para sumar estrellas cuando escaneas el código fuera de la app.</p>
+      <label>Teléfono<input type="tel" inputMode="tel" autoComplete="tel" required minLength={7} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="300 123 4567" /></label>
+      {err && <p className="err">{err}</p>}
+      <button className="btn primary">Guardar</button>
+    </form>
+  )
+}
+
+// #/v/<negocio>/<código>: suma la estrella con la tarjeta guardada en este navegador o, si no la hay, con el teléfono.
+function Checkin({ biz, code, via }) {
+  const [info, setInfo] = useState(undefined)
+  const [st, setSt] = useState({ step: 'loading' })
+  const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
+  const ran = useRef(false)
+  useEffect(() => { bizInfo(biz).then(setInfo) }, [biz])
+  useEffect(() => {
+    if (ran.current) return
+    ran.current = true
+    const card = cardForBiz(biz)
+    if (!card) return setSt({ step: 'phone' })
+    rpc('app_checkin', { p_token: card.token, p_biz: biz, p_code: code, p_via: via })
+      .then((r) => {
+        if (!r) { removeCard(card.token); return setSt({ step: 'phone' }) }
+        navigator.vibrate?.([60, 40, 120])
+        setSt({ step: 'done', r, token: card.token })
+      })
+      .catch((e) => setSt({ step: 'error', msg: e.message, token: card.token }))
+  }, [biz, code, via])
+
+  const byPhone = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      const r = await rpc('app_checkin_phone', { p_biz: biz, p_code: code, p_phone: phone, p_via: via })
+      if (!r) setSt({ step: 'nocard' })
+      else { navigator.vibrate?.([60, 40, 120]); setSt({ step: 'done', r }) }
+    } catch (x) { setSt({ step: 'phone', msg: x.message }) }
+    setBusy(false)
+  }
+
+  const name = info?.name || 'el negocio'
+  const open = st.token && <a className="btn primary" href={`#/c/${st.token}`}>Ver mi tarjeta</a>
+  return (
+    <main className="shell" style={info?.color ? { '--brand': info.color } : undefined}>
+      {info?.logo && <img className="reg-logo" src={info.logo} alt={info.name} />}
+      {st.step === 'loading' && <p className="lede">Sumando tu estrella…</p>}
+      {st.step === 'phone' && (
+        <>
+          <h1 className="hero sm">Suma tu estrella en {name}</h1>
+          <form className="panel form" onSubmit={byPhone}>
+            <p className="muted">Escribe el teléfono con el que te registraste.</p>
+            <label>Teléfono<input type="tel" inputMode="tel" autoComplete="tel" autoFocus required minLength={7} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="300 123 4567" /></label>
+            {st.msg && <p className="err">{st.msg}</p>}
+            <button className="btn primary" disabled={busy}>{busy ? 'Sumando…' : 'Sumar estrella'}</button>
+          </form>
+        </>
+      )}
+      {st.step === 'nocard' && (
+        <section className="panel">
+          <h2>No encontramos tu tarjeta</h2>
+          <p className="muted">No hay una tarjeta con ese teléfono en {name}.</p>
+          <div className="actions">
+            <a className="btn primary" href={`#/r/${biz}`}>Crear mi tarjeta</a>
+            <button className="btn" onClick={() => setSt({ step: 'phone' })}>Probar otro número</button>
+          </div>
+        </section>
+      )}
+      {st.step === 'done' && (
+        <>
+          <Fireworks show />
+          <div className="result good" role="status">
+            <svg viewBox="0 0 120 120" aria-hidden><circle cx="60" cy="60" r="46" className="ring" /><path d="M38 62l15 15 30-34" className="tick" /></svg>
+            <div>
+              <b>¡+1 estrella, {st.r.name.split(' ')[0]}!</b>
+              <span>Visita {st.r.day} de {st.r.target}{st.r.gift ? ` · ¡ganaste ${st.r.gift} de regalo!` : ''}</span>
+              {st.r.bonus_days > 0 && <span>Tienes {st.r.bonus_days} de regalo disponible{st.r.bonus_days === 1 ? '' : 's'}.</span>}
+            </div>
+          </div>
+          {open || <p className="muted">Abre tu tarjeta desde la app para verla.</p>}
+        </>
+      )}
+      {st.step === 'error' && (
+        <>
+          <div className="result bad" role="alert"><div><b>No se sumó la estrella</b><span>{st.msg}</span></div></div>
+          {open}
+        </>
+      )}
+    </main>
   )
 }

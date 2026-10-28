@@ -93,7 +93,11 @@ function Negocios({ pin }) {
     <>
       <button className="link no-print" onClick={() => setPoster(null)}>‹ Volver a negocios</button>
       <h1 className="h1 no-print">QR de {poster.name}</h1>
-      <Poster biz={poster} />
+      <div className="seg no-print" role="tablist">
+        {[[false, 'QR de registro'], [true, 'QR de estrellas']].map(([v, l]) =>
+          <button key={l} role="tab" aria-selected={!!poster.showVisit === v} className={!!poster.showVisit === v ? 'on' : ''} onClick={() => setPoster({ ...poster, showVisit: v })}>{l}</button>)}
+      </div>
+      <Poster key={poster.showVisit ? 'v' : 'r'} biz={poster} visit={poster.showVisit ? poster.visit_code : undefined} />
     </>
   )
 

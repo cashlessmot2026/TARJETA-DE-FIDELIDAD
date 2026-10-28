@@ -1,18 +1,21 @@
 import { useRef } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
-export const registerUrl = (slug) => `${location.origin}${location.pathname}#/r/${slug}`
+const base = () => `${location.origin}${location.pathname}`
+export const registerUrl = (slug) => `${base()}#/r/${slug}`
+// La etiqueta NFC lleva /nfc al final para distinguirla en las estadísticas.
+export const visitUrl = (slug, code, nfc = false) => `${base()}#/v/${slug}/${code}${nfc ? '/nfc' : ''}`
 
-/** Afiche para imprimir con el QR de registro del negocio. */
-export default function Poster({ biz }) {
+/** Afiche para imprimir: QR de registro, o QR de estrellas si se pasa `visit` (código de visita). */
+export default function Poster({ biz, visit }) {
   const box = useRef(null)
-  const url = registerUrl(biz.slug)
+  const url = visit ? visitUrl(biz.slug, visit) : registerUrl(biz.slug)
   const download = () => {
     const canvas = box.current?.querySelector('canvas')
     if (!canvas) return
     const a = document.createElement('a')
     a.href = canvas.toDataURL('image/png')
-    a.download = `qr-${biz.slug}.png`
+    a.download = `qr-${visit ? 'estrellas' : 'registro'}-${biz.slug}.png`
     a.click()
   }
   return (
@@ -25,12 +28,14 @@ export default function Poster({ biz }) {
       <article className="poster" style={{ '--brand': biz.color }}>
         {biz.logo && <img className="poster-logo" src={biz.logo} alt="" />}
         <h2>{biz.name}</h2>
-        <p className="poster-lede">Escanea y obtén tu tarjeta de fidelidad</p>
+        <p className="poster-lede">{visit ? 'Escanea y suma tu estrella de hoy' : 'Escanea y obtén tu tarjeta de fidelidad'}</p>
         <div className="poster-qr" ref={box}>
           <QRCodeCanvas value={url} size={720} marginSize={2} level="M" style={{ width: '100%', height: 'auto' }} />
         </div>
-        <p className="poster-steps">1. Abre la cámara · 2. Escanea el código · 3. Regístrate en segundos</p>
-        <small className="poster-url">{url.replace(/^https?:\/\//, '')}</small>
+        <p className="poster-steps">{visit
+          ? '1. Abre tu tarjeta · 2. Toca «Sumar estrella» · 3. Escanea este código'
+          : '1. Abre la cámara · 2. Escanea el código · 3. Regístrate en segundos'}</p>
+        {!visit && <small className="poster-url">{url.replace(/^https?:\/\//, '')}</small>}
       </article>
     </div>
   )

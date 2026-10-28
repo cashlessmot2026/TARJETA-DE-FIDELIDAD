@@ -260,3 +260,9 @@ input:focus { outline: 2px solid var(--mint); border-color: transparent; }
   .poster { width: 100%; max-width: none; border-radius: 0; box-shadow: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .poster-qr { width: 70%; }
 }
+
+/* ───────── sumar estrella (cliente) y QR de estrellas (admin) ───────── */
+.btn.big { padding: 15px 18px; font-size: 17px; border-radius: 14px; width: 100%; }
+.sheet .full { width: 100%; }
+.visit-tools { display: grid; gap: 12px; }
+.visit-code { font-family: 'DM Mono', monospace; letter-spacing: .08em; color: var(--gold); }

@@ -1,8 +1,7 @@
-import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './supabase.js'
-import { QrScanner, useNfcReader, parseCode, assignTag, nfcSupported } from './Scanner.jsx'
-import Poster from './Poster.jsx'
+import { QrScanner, parseCode, nfcSupported, writeNfcUrl } from './Scanner.jsx'
+import Poster, { visitUrl } from './Poster.jsx'
 
 // Sesión del admin: { p_biz, p_pin, biz } — p_biz es el enlace del negocio (#/admin/<negocio>).
 const KEY = 'fid_admin'
@@ -39,7 +38,7 @@ function Gate({ slug, onOk }) {
   )
 }
 
-const TABS = [['panel', 'Panel'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Validar'], ['qr', 'Código QR'], ['ajustes', 'Ajustes']]
+const TABS = [['panel', 'Panel'], ['estrellas', 'QR de estrellas'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Redimir'], ['qr', 'QR de registro'], ['ajustes', 'Ajustes']]
 
 function Dash({ pin, biz, onExit }) {
   const [tab, setTab] = useState('panel')
@@ -52,6 +51,7 @@ function Dash({ pin, biz, onExit }) {
       </nav>
       <section className="content">
         {tab === 'panel' && <Panel pin={pin} />}
+        {tab === 'estrellas' && <Estrellas pin={pin} biz={biz} />}
         {tab === 'clientes' && <Clientes pin={pin} />}
         {tab === 'promos' && <Promos pin={pin} />}
         {tab === 'premios' && <Premios pin={pin} />}
@@ -118,27 +118,16 @@ function Clientes({ pin }) {
   const [list, reload, err] = useRpc('admin_customers', pin)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(null)
+  // «+» suma un día con la lógica del plan (sin el límite de 12 h); «−» solo quita una estrella.
   const adj = async (c, delta) => {
     setBusy(c.id)
-    try { await rpc('admin_add_stars', { ...pin, p_code: c.code, p_delta: delta, p_kind: 'manual', p_note: 'Ajuste del administrador' }); await reload() }
-    catch (e) { alert(e.message) }
+    try {
+      if (delta > 0) await rpc('admin_confirm_day', { ...pin, p_code: c.code, p_kind: 'manual' })
+      else await rpc('admin_add_stars', { ...pin, p_code: c.code, p_delta: delta, p_kind: 'manual', p_note: 'Ajuste del administrador' })
+      await reload()
+    } catch (e) { alert(e.message) }
     setBusy(null)
   }
-  const [asg, setAsg] = useState(null) // cliente esperando etiqueta
-  const [asgMsg, setAsgMsg] = useState('')
-  useEffect(() => {
-    if (!asg) return
-    const ctrl = new AbortController()
-    setAsgMsg('')
-    assignTag(asg.code, ctrl.signal)
-      .then(async ({ uid, written }) => {
-        await rpc('admin_assign_nfc', { ...pin, p_code: asg.code, p_uid: uid })
-        setAsgMsg(`Etiqueta ${uid} asignada a ${asg.name}${written ? '' : ' (solo por número de serie)'}.`)
-        setAsg(null); reload()
-      })
-      .catch((e) => { if (!ctrl.signal.aborted) { setAsgMsg(e.message || 'No se pudo asignar'); setAsg(null) } })
-    return () => ctrl.abort()
-  }, [asg, pin, reload])
   const del = async (c) => {
     if (!confirm(`¿Eliminar a ${c.name}? Se borran su tarjeta, estrellas y días de regalo. No se puede deshacer.`)) return
     setBusy(c.id)
@@ -146,24 +135,19 @@ function Clientes({ pin }) {
     catch (e) { alert(e.message) }
     setBusy(null)
   }
-  const unassign = async (c) => { try { await rpc('admin_assign_nfc', { ...pin, p_code: c.code, p_uid: '' }); reload() } catch (e) { alert(e.message) } }
   const rows = (list || []).filter((c) => (c.name + c.code + (c.phone || '')).toLowerCase().includes(q.toLowerCase()))
   return (
     <>
       <h1 className="h1">Clientes</h1>
       <input className="search" placeholder="Buscar por nombre, teléfono o código" value={q} onChange={(e) => setQ(e.target.value)} />
       {err && <p className="err">{err}</p>}
-      {asg && <p className="muted" role="status">Acerca una etiqueta o tarjeta NFC al teléfono para asignarla a {asg.name}… <button className="link" onClick={() => setAsg(null)}>Cancelar</button></p>}
-      {asgMsg && <p className="muted" role="status">{asgMsg}</p>}
-      {!nfcSupported() && <p className="muted">Para asignar NFC abre el panel en Chrome para Android.</p>}
+      <p className="muted">Los clientes suman su estrella escaneando el QR de estrellas. Usa «+» solo para casos especiales.</p>
       <div className="panel table">
         {list && rows.length === 0 && <p className="muted">No hay clientes que coincidan.</p>}
         {rows.map((c) => (
           <div className="trow" key={c.id}>
-            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.plan_title ? ` · ${c.plan_title}` : ''}{c.nfc_uid ? ' · NFC ✓' : ''}</span></div>
+            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.plan_title ? ` · ${c.plan_title}` : ''}</span></div>
             <div className="actions">
-              <button className="link" disabled={!nfcSupported() || !!asg} onClick={() => setAsg(c)}>{c.nfc_uid ? 'Reasignar NFC' : 'Asignar NFC'}</button>
-              {c.nfc_uid && <button className="link danger" onClick={() => unassign(c)}>Quitar NFC</button>}
               <button className="link danger" disabled={busy === c.id} onClick={() => del(c)}>Eliminar</button>
             </div>
             <time>{c.last_visit ? `Última visita ${when(c.last_visit)}` : 'Sin visitas'}</time>
@@ -271,57 +255,79 @@ function Premios({ pin }) {
   )
 }
 
+// QR de estrellas: el cliente lo escanea (o toca la etiqueta NFC) para sumar su estrella del día.
+function Estrellas({ pin, biz }) {
+  const [code, setCode] = useState(null)
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+  const [writing, setWriting] = useState(false)
+  useEffect(() => { rpc('admin_visit_code', pin).then(setCode).catch((e) => setErr(e.message)) }, [pin])
+  if (err) return <p className="err">{err}</p>
+  if (!code) return <p className="muted">Cargando…</p>
+  const nfcUrl = visitUrl(biz.slug, code, true)
+  const regen = async () => {
+    if (!confirm('¿Generar un código nuevo? El QR actual y las etiquetas NFC grabadas dejarán de funcionar: tendrás que imprimir el QR y grabar las etiquetas otra vez.')) return
+    try { setCode(await rpc('admin_regen_visit_code', pin)); setMsg('Código nuevo generado. Imprime el QR y vuelve a grabar tus etiquetas NFC.') }
+    catch (e) { setMsg(e.message) }
+  }
+  const write = async () => {
+    setWriting(true); setMsg('Acerca la etiqueta NFC a la parte de atrás del teléfono…')
+    try { await writeNfcUrl(nfcUrl); setMsg('Etiqueta grabada. Pégala en caja: los clientes acercan su teléfono para sumar la estrella.') }
+    catch { setMsg('No se pudo grabar la etiqueta. Inténtalo de nuevo.') }
+    setWriting(false)
+  }
+  return (
+    <>
+      <h1 className="h1 no-print">QR de estrellas</h1>
+      <p className="muted no-print">Ponlo en caja o en una pantalla. En cada visita el cliente lo escanea desde su tarjeta («Sumar estrella») y se suma su estrella (una cada 12 h). Es distinto al QR de registro.</p>
+      <div className="panel visit-tools no-print">
+        <h2>Etiqueta NFC</h2>
+        <p className="muted">Graba este mismo código en una etiqueta NFC y pégala en caja. Al acercar el teléfono, el cliente suma su estrella (Android y iPhone).</p>
+        <div className="actions">
+          {nfcSupported() && <button className="btn primary" disabled={writing} onClick={write}>Grabar etiqueta NFC</button>}
+          <button className="btn" onClick={() => { navigator.clipboard?.writeText(nfcUrl); setMsg('Enlace copiado. Grábalo como «URL» con una app como NFC Tools.') }}>Copiar enlace para NFC</button>
+          <button className="btn" onClick={regen}>Regenerar código</button>
+        </div>
+        {!nfcSupported() && <p className="muted">Para grabar desde aquí abre el panel en Chrome para Android, o copia el enlace y grábalo con la app NFC Tools.</p>}
+        <p className="muted">Código actual: <span className="visit-code">{code}</span>. Si crees que alguien lo copió, regenéralo.</p>
+        {msg && <p className="muted" role="status">{msg}</p>}
+      </div>
+      <Poster biz={biz} visit={code} />
+    </>
+  )
+}
+
+// Redimir: el admin escanea el QR de la tarjeta del cliente para usar su día gratis.
 function Validar({ pin }) {
   const [mode, setMode] = useState('qr')
   const [manual, setManual] = useState('')
   const [res, setRes] = useState(null)
 
-  const [boom, setBoom] = useState(0)
-
   const find = useCallback(async (code) => {
     try {
       const l = await rpc('admin_lookup', { ...pin, p_code: code })
-      if (l.bonus_days > 0) { setRes({ ok: true, ...l, note: 'Este cliente tiene día gratis disponible.' }); navigator.vibrate?.(80); return }
-      const r = await rpc('admin_confirm_day', { ...pin, p_code: code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
-      const note = `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} ${r.gift === 1 ? 'día' : 'días'} de regalo!` : ''}${r.completed ? ' · plan completo' : ''}`
-      setRes({ ok: true, ...r, note }); setBoom((n) => n + 1); navigator.vibrate?.([60, 40, 120])
+      setRes({ ok: true, ...l, note: l.bonus_days > 0 ? 'Este cliente tiene día gratis disponible.' : 'Este cliente aún no tiene días de regalo.' })
+      navigator.vibrate?.(80)
     } catch (e) { setRes({ ok: false, msg: e.message }) }
-  }, [pin, mode])
+  }, [pin])
 
-  const nfc = useNfcReader((c) => find(c), mode === 'nfc')
-  const act = async (fn, args, note) => {
-    try { const r = await rpc(fn, { ...pin, p_code: res.code, ...args }); setRes({ ok: true, ...r, note: note(r) }) }
-    catch (e) { setRes({ ok: false, msg: e.message }) }
-  }
-  const useGift = () => act('admin_use_bonus_day', {}, (r) => r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.`)
-  const confirmDay = async () => {
+  const useGift = async () => {
     try {
-      const r = await rpc('admin_confirm_day', { ...pin, p_code: res.code, p_kind: mode === 'nfc' ? 'nfc' : 'scan' })
-      setRes({ ok: true, ...r, note: `Día ${r.day} de ${r.target} confirmado · +1 estrella${r.gift ? ` · ¡+${r.gift} de regalo!` : ''}` }); setBoom((n) => n + 1)
+      const r = await rpc('admin_use_bonus_day', { ...pin, p_code: res.code })
+      setRes({ ok: true, ...r, note: r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.` })
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
 
   return (
     <>
-      <Fireworks show={boom > 0} key={boom} />
-      <h1 className="h1">Validar tarjeta</h1>
+      <h1 className="h1">Redimir día gratis</h1>
+      <p className="muted">Escanea el QR de la tarjeta del cliente. Las estrellas ya no se suman aquí: el cliente las suma con el QR de estrellas.</p>
       <div className="seg" role="tablist">
-        {[['qr', 'Escanear QR'], ['nfc', 'Leer NFC'], ['code', 'Escribir código']].map(([k, l]) =>
+        {[['qr', 'Escanear QR'], ['code', 'Escribir código']].map(([k, l]) =>
           <button key={k} role="tab" aria-selected={mode === k} className={mode === k ? 'on' : ''} onClick={() => { setMode(k); setRes(null) }}>{l}</button>)}
       </div>
       <div className="panel">
         {mode === 'qr' && <QrScanner active onCode={find} />}
-        {mode === 'nfc' && (
-          <div className="nfc">
-            <div className={`pulse ${nfc === 'listening' ? 'live' : ''}`} aria-hidden />
-            <p>
-              {nfc === 'unsupported' && 'Este dispositivo no admite NFC en el navegador. Usa Chrome en Android o escanea el QR.'}
-              {nfc === 'denied' && 'Permiso de NFC denegado. Actívalo en los ajustes del sitio.'}
-              {nfc === 'unknown' && 'La etiqueta no tiene una tarjeta válida.'}
-              {(nfc === 'idle' || nfc === 'listening') && 'Acerca la etiqueta NFC del cliente.'}
-            </p>
-          </div>
-        )}
         {mode === 'code' && (
           <form className="form inline" onSubmit={(e) => { e.preventDefault(); const c = parseCode(manual) || manual.trim().toUpperCase(); if (c) find(c); setManual('') }}>
             <label>Código de tarjeta<input value={manual} onChange={(e) => setManual(e.target.value)} placeholder="A1B2C3D4" maxLength={12} /></label>
@@ -337,12 +343,9 @@ function Validar({ pin }) {
               <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" className="ring" /><path d="M38 62l15 15 30-34" className="tick" /></svg>
               <div>
                 <b>{res.name}</b>
-                <span>{res.note || 'Día pagado confirmado.'}</span>
-                <span>{res.stars} días pagados · {res.bonus_days} de regalo disponibles</span>
-                <div className="actions">
-                  {res.bonus_days > 0 && !res.closed && <button className="btn primary" onClick={useGift}>Redimir día gratis</button>}
-                  {res.day === undefined && !res.closed && <button className="btn" onClick={confirmDay}>Confirmar día pagado</button>}
-                </div>
+                <span>{res.note}</span>
+                <span>{res.stars} estrellas · {res.bonus_days} de regalo disponibles</span>
+                {res.bonus_days > 0 && !res.closed && <div className="actions"><button className="btn primary" onClick={useGift}>Redimir día gratis</button></div>}
               </div>
             </>
           ) : <div><b>No se pudo validar</b><span>{res.msg}</span></div>}

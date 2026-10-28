@@ -78,7 +78,7 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
           <span className="back-body">
             <span className="log">
               <b>Compras</b>
-              {dated.length === 0 && <i className="empty">Aún no hay visitas. Muestra tu QR en caja.</i>}
+              {dated.length === 0 && <i className="empty">Aún no hay visitas. Escanea el QR de estrellas del negocio.</i>}
               {dated.slice(0, 5).map((v, i) => (
                 <span key={i} className="entry">
                   <time>{fmt(v.at)}</time>

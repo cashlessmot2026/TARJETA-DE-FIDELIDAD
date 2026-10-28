@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 
-/** Extrae el código de tarjeta de un QR/NFC ("FID:ABCD1234", URL o texto plano). */
+/** Extrae el código de tarjeta de un QR ("FID:ABCD1234" o texto plano). */
 export function parseCode(raw) {
   const t = String(raw || '').trim()
   const m = t.match(/FID:([A-Za-z0-9]{6,12})/i)
@@ -9,11 +9,19 @@ export function parseCode(raw) {
   return /^[A-Za-z0-9]{8}$/.test(t) ? t.toUpperCase() : null
 }
 
-export function QrScanner({ onCode, active }) {
+/** Extrae la ruta de visita de un QR o etiqueta del negocio (".../#/v/<negocio>/<código>"). */
+export function parseVisit(raw) {
+  const m = String(raw || '').match(/#\/v\/([a-z0-9-]+)\/([A-Za-z0-9]{6,16})/i)
+  return m ? `v/${m[1].toLowerCase()}/${m[2].toUpperCase()}` : null
+}
+
+export function QrScanner({ onCode, active, parse = parseCode }) {
   const ref = useRef(null)
   const [err, setErr] = useState('')
   const cb = useRef(onCode)
   cb.current = onCode
+  const pr = useRef(parse)
+  pr.current = parse
 
   useEffect(() => {
     if (!active) return
@@ -25,7 +33,7 @@ export function QrScanner({ onCode, active }) {
         { facingMode: 'environment' },
         { fps: 15, aspectRatio: 1, disableFlip: false },
         (text) => {
-          const code = parseCode(text)
+          const code = pr.current(text)
           if (!code) return
           const now = Date.now()
           if (code === last.code && now - last.at < 4000) return
@@ -51,52 +59,8 @@ export function QrScanner({ onCode, active }) {
 
 export const nfcSupported = () => typeof window !== 'undefined' && 'NDEFReader' in window
 
-export function useNfcReader(onCode, enabled) {
-  const [state, setState] = useState(nfcSupported() ? 'idle' : 'unsupported')
-  const cb = useRef(onCode)
-  cb.current = onCode
-  useEffect(() => {
-    if (!enabled || !nfcSupported()) return
-    const ctrl = new AbortController()
-    const reader = new window.NDEFReader()
-    reader
-      .scan({ signal: ctrl.signal })
-      .then(() => setState('listening'))
-      .catch(() => setState('denied'))
-    reader.onreading = (e) => {
-      for (const r of e.message.records) {
-        try {
-          const text = new TextDecoder(r.encoding || 'utf-8').decode(r.data)
-          const code = parseCode(text)
-          if (code) return cb.current(code)
-        } catch {}
-      }
-      // Etiqueta sin código nuestro: se usa su número de serie (asignado desde Clientes).
-      if (e.serialNumber) return cb.current(e.serialNumber.toUpperCase())
-      setState('unknown')
-    }
-    return () => ctrl.abort()
-  }, [enabled])
-  return state
-}
-
-/** Espera una etiqueta, devuelve su número de serie y (si se puede) le graba el código. */
-export async function assignTag(code, signal) {
-  const r = new window.NDEFReader()
-  const uid = await new Promise((resolve, reject) => {
-    signal?.addEventListener('abort', () => reject(new Error('cancelado')))
-    r.onreading = (e) => resolve(e.serialNumber)
-    r.onreadingerror = () => reject(new Error('No se pudo leer la etiqueta'))
-    r.scan({ signal }).catch(reject)
-  })
-  if (!uid) throw new Error('La etiqueta no entrega número de serie')
-  let written = true
-  try { await new window.NDEFReader().write({ records: [{ recordType: 'text', data: `FID:${code}` }] }, { overwrite: true, signal }) }
-  catch { written = false }
-  return { uid: uid.toUpperCase(), written }
-}
-
-export async function writeNfc(code) {
+/** Graba un enlace en una etiqueta NFC (Chrome para Android). */
+export async function writeNfcUrl(url) {
   const w = new window.NDEFReader()
-  await w.write({ records: [{ recordType: 'text', data: `FID:${code}` }] })
+  await w.write({ records: [{ recordType: 'url', data: url }] }, { overwrite: true })
 }
