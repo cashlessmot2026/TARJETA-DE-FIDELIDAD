@@ -7,6 +7,17 @@ import { isIos, keepTokenInUrl, useInstall } from './install.js'
 import { cardForBiz, loadCards, removeCard, saveCard } from './cards.js'
 
 const go = (hash) => location.replace(hash)
+// Voz del navegador. En iPhone solo suena si antes hubo un toque: unlockVoice() se llama al abrir «Sumar estrella».
+const say = (text) => {
+  try {
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = 'es-CO'
+    u.voice = speechSynthesis.getVoices().find((v) => v.lang.startsWith('es')) || null
+    speechSynthesis.cancel(); speechSynthesis.speak(u)
+  } catch {}
+}
+const unlockVoice = () => { try { speechSynthesis.speak(new SpeechSynthesisUtterance('')) } catch {} }
+const thanks = () => { navigator.vibrate?.([60, 40, 120]); say('¡Gracias por tu compra!') }
 const infos = new Map() // datos públicos (y logo) de cada negocio, se piden una sola vez
 const bizInfo = (slug) => {
   if (!infos.has(slug)) infos.set(slug, rpc('app_business', { p_slug: slug }).catch(() => null))
@@ -276,7 +287,7 @@ function ScanButton() {
   const nfc = useNfcText((t) => { const r = parseVisit(t); if (r) go(`#/${r}/nfc`); else setBad(true) }, open)
   return (
     <>
-      <button className="btn primary big" onClick={() => setOpen(true)}>★ Sumar estrella</button>
+      <button className="btn primary big" onClick={() => { unlockVoice(); setOpen(true) }}>★ Sumar estrella</button>
       {open && (
         <div className="sheet-bg" onClick={close}>
           <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="scan-title" onClick={(e) => e.stopPropagation()}>
@@ -334,7 +345,7 @@ function Checkin({ biz, code, via }) {
     rpc('app_checkin', { p_token: card.token, p_biz: biz, p_code: code, p_via: via })
       .then((r) => {
         if (!r) { removeCard(card.token); return setSt({ step: 'phone' }) }
-        navigator.vibrate?.([60, 40, 120])
+        thanks()
         setSt({ step: 'done', r, token: card.token })
       })
       .catch((e) => setSt({ step: 'error', msg: e.message, token: card.token }))
@@ -346,7 +357,7 @@ function Checkin({ biz, code, via }) {
     try {
       const r = await rpc('app_checkin_phone', { p_biz: biz, p_code: code, p_phone: phone, p_via: via })
       if (!r) setSt({ step: 'nocard' })
-      else { navigator.vibrate?.([60, 40, 120]); setSt({ step: 'done', r }) }
+      else { thanks(); setSt({ step: 'done', r }) }
     } catch (x) { setSt({ step: 'phone', msg: x.message }) }
     setBusy(false)
   }
