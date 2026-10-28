@@ -297,7 +297,9 @@ function ScanButton() {
               <QrScanner active parse={(t) => parseVisit(t) || (setBad(true), null)} onCode={(r) => go(`#/${r}`)} />
             </div>
             {nfc === 'listening' && <p className="nfc-live"><span className="dot" aria-hidden /> NFC activo: acerca el teléfono a la etiqueta</p>}
-            {nfc === 'denied' && <p className="muted">Para usar la etiqueta NFC, permite «Dispositivos NFC» en los ajustes del sitio, o escanea el QR.</p>}
+            {nfc === 'empty' && <p className="err">Esa etiqueta NFC está vacía o no tiene el enlace de estrellas. Pide al negocio que la grabe de nuevo, o escanea el QR.</p>}
+            {nfc === 'error' && <p className="err">No se pudo leer la etiqueta. Mantén el teléfono quieto sobre ella un segundo.</p>}
+            {nfc === 'denied' &&<p className="muted">Para usar la etiqueta NFC, permite «Dispositivos NFC» en los ajustes del sitio, o escanea el QR.</p>}
             {nfc === 'unsupported' && <p className="muted">{isIos
               ? 'Con etiqueta NFC: cierra esta ventana y acerca la parte de arriba del iPhone a la etiqueta; toca el aviso que aparece.'
               : 'Con etiqueta NFC: activa el NFC del teléfono y acércalo a la etiqueta; se abrirá solo.'}</p>}

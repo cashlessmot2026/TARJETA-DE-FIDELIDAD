@@ -59,7 +59,24 @@ export function QrScanner({ onCode, active, parse = parseCode }) {
 
 export const nfcSupported = () => typeof window !== 'undefined' && 'NDEFReader' in window
 
-/** Escucha etiquetas NFC mientras `enabled` (Chrome para Android) y entrega el texto o enlace grabado. */
+/** Primer enlace o texto de un mensaje NDEF (también dentro de un «smart poster», como graban algunas apps). */
+export function ndefText(message) {
+  for (const r of message.records) {
+    if (r.recordType === 'smart-poster') {
+      const inner = r.toRecords && ndefText({ records: r.toRecords() })
+      if (inner) return inner
+      continue
+    }
+    if (!['url', 'absolute-url', 'text'].includes(r.recordType)) continue
+    try { return new TextDecoder(r.encoding || 'utf-8').decode(r.data) } catch {}
+  }
+  return null
+}
+
+/**
+ * Escucha etiquetas NFC mientras `enabled` (Chrome para Android) y entrega el texto o enlace grabado.
+ * Estados: unsupported | idle | listening | denied | empty (etiqueta sin enlace) | error (no se pudo leer).
+ */
 export function useNfcText(onText, enabled) {
   const [state, setState] = useState(nfcSupported() ? 'idle' : 'unsupported')
   const cb = useRef(onText)
@@ -69,16 +86,26 @@ export function useNfcText(onText, enabled) {
     const ctrl = new AbortController()
     const reader = new window.NDEFReader()
     reader.onreading = (e) => {
-      for (const r of e.message.records) {
-        if (r.recordType !== 'url' && r.recordType !== 'text') continue
-        try { return cb.current(new TextDecoder(r.encoding || 'utf-8').decode(r.data)) } catch {}
-      }
-      setState('unknown')
+      const text = ndefText(e.message)
+      if (text) { setState('listening'); return cb.current(text) }
+      setState('empty')
     }
+    reader.onreadingerror = () => setState('error')
     reader.scan({ signal: ctrl.signal }).then(() => setState('listening')).catch(() => setState('denied'))
     return () => ctrl.abort()
   }, [enabled])
   return state
+}
+
+/** Lee una etiqueta una vez y devuelve su contenido (para que el admin compruebe lo que quedó grabado). */
+export async function readNfcOnce(signal) {
+  const r = new window.NDEFReader()
+  return new Promise((resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(new Error('cancelado')))
+    r.onreading = (e) => resolve({ text: ndefText(e.message), records: e.message.records.map((x) => x.recordType) })
+    r.onreadingerror = () => reject(new Error('No se pudo leer la etiqueta. Mantenla quieta contra el teléfono.'))
+    r.scan({ signal }).catch(reject)
+  })
 }
 
 /** Graba un enlace en una etiqueta NFC (Chrome para Android). */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './supabase.js'
-import { QrScanner, parseCode, nfcSupported, writeNfcUrl } from './Scanner.jsx'
+import { QrScanner, parseCode, parseVisit, nfcSupported, writeNfcUrl, readNfcOnce } from './Scanner.jsx'
 import Poster, { visitUrl } from './Poster.jsx'
 
 // Sesión del admin: { p_biz, p_pin, biz } — p_biz es el enlace del negocio (#/admin/<negocio>).
@@ -272,9 +272,24 @@ function Estrellas({ pin, biz }) {
   }
   const write = async () => {
     setWriting(true); setMsg('Acerca la etiqueta NFC a la parte de atrás del teléfono…')
-    try { await writeNfcUrl(nfcUrl); setMsg('Etiqueta grabada. Pégala en caja: los clientes acercan su teléfono para sumar la estrella.') }
-    catch { setMsg('No se pudo grabar la etiqueta. Inténtalo de nuevo.') }
+    try { await writeNfcUrl(nfcUrl); setMsg('Etiqueta grabada. Toca «Probar etiqueta» para comprobarla y luego pégala en caja.') }
+    catch (e) { setMsg(`No se pudo grabar la etiqueta (${e.name || 'error'}: ${e.message}). Si está bloqueada contra escritura, usa otra.`) }
     setWriting(false)
+  }
+  // Lee la etiqueta y dice si tiene el enlace de estrellas vigente.
+  const test = async () => {
+    setWriting(true); setMsg('Acerca la etiqueta para comprobarla…')
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), 20000)
+    try {
+      const { text, records } = await readNfcOnce(ctrl.signal)
+      const v = parseVisit(text)
+      if (v === `v/${biz.slug}/${code}`) setMsg('✓ La etiqueta está bien: tiene el enlace de estrellas vigente.')
+      else if (v) setMsg('✗ La etiqueta tiene un código de estrellas viejo o de otro negocio. Grábala de nuevo.')
+      else if (text) setMsg(`✗ La etiqueta no tiene el enlace de estrellas. Contiene: «${text.slice(0, 80)}». Grábala de nuevo.`)
+      else setMsg(records.length ? `✗ La etiqueta tiene datos que la app no entiende (${records.join(', ')}). Grábala de nuevo.` : '✗ La etiqueta está vacía. Grábala con «Grabar etiqueta NFC».')
+    } catch (e) { setMsg(ctrl.signal.aborted ? 'No se detectó ninguna etiqueta. Inténtalo de nuevo.' : e.message) }
+    clearTimeout(t); setWriting(false)
   }
   return (
     <>
@@ -285,6 +300,7 @@ function Estrellas({ pin, biz }) {
         <p className="muted">Graba este mismo código en una etiqueta NFC y pégala en caja. Al acercar el teléfono, el cliente suma su estrella (Android y iPhone).</p>
         <div className="actions">
           {nfcSupported() && <button className="btn primary" disabled={writing} onClick={write}>Grabar etiqueta NFC</button>}
+          {nfcSupported() && <button className="btn" disabled={writing} onClick={test}>Probar etiqueta</button>}
           <button className="btn" onClick={() => { navigator.clipboard?.writeText(nfcUrl); setMsg('Enlace copiado. Grábalo como «URL» con una app como NFC Tools.') }}>Copiar enlace para NFC</button>
           <button className="btn" onClick={regen}>Regenerar código</button>
         </div>
