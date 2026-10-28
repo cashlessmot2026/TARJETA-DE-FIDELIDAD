@@ -13,7 +13,7 @@
 | Ruta | Para quién | Qué hace |
 |---|---|---|
 | `#/super` | Superadmin | Crea/edita negocios: nombre, correo, logo (el color de la tarjeta sale automático del logo), enlace, PIN del admin, activo. Vista previa en vivo de la tarjeta. Descarga afiche/QR y copia el enlace del admin. |
-| `#/admin/<negocio>` | Admin del negocio | Panel, QR de estrellas (afiche, grabar NFC, regenerar), Clientes, Planes, Premios, Redimir (día gratis), QR de registro, Ajustes. |
+| `#/admin/<negocio>` | Admin del negocio | Panel, QR de estrellas (afiche, grabar/probar NFC, regenerar), Clientes, Premios, Canjear (premios), QR de registro, Ajustes. |
 | `#/r/<negocio>` | Cliente | Registro en ese negocio (es lo que abre el QR del afiche). Si ya tiene tarjeta de ese negocio, la abre. |
 | `#/c/<token>` | Cliente | Su tarjeta (botón «Sumar estrella»). |
 | `#/v/<negocio>/<código>[/nfc]` | Cliente | Suma la estrella (QR de estrellas o etiqueta NFC). Si el navegador no tiene la tarjeta, pide el teléfono. |
@@ -21,7 +21,7 @@
 | `/privacidad/` | Público (oculta, `noindex`) | Política de privacidad (Ley 1581 de 2012, Colombia). |
 
 ## Decisiones tomadas
-- Cada negocio define sus propios planes y premios.
+- Cada negocio define sus propios premios (los planes se eliminaron el 28-oct; la tabla `promotions` queda sin uso).
 - Acceso del admin: enlace del negocio + PIN. Superadmin con PIN maestro.
 - Google Wallet: **pospuesto** hasta que Google apruebe la cuenta. El botón está oculto.
 - QR: afiche imprimible/PDF + PNG, descargable por el superadmin y por el admin del negocio.
@@ -35,6 +35,7 @@ Para un proyecto nuevo, en Supabase → SQL Editor ejecutar **en orden**:
 1. `supabase/schema.sql`
 2. `supabase/multinegocio.sql`
 3. `supabase/visitas.sql`
+4. `supabase/premios.sql` (quita los planes: las estrellas se acumulan para los premios)
 
 Ya están aplicados en `shrkfzuxpmwkyyqjzcmb` (verificado: `super_check` responde).
 
@@ -46,10 +47,10 @@ Funciones RPC:
 - **Superadmin:** `super_check`, `super_businesses`, `super_save_business`, `super_set_pin`.
 
 ## Reglas de negocio
-- Cada compra = 1 estrella. Se pueden sumar varias en el mismo día; solo hay una pausa de 3 min entre estrellas (evita contar doble la misma lectura).
-- Al llegar a la meta del plan se suman los días de regalo del plan.
-- Al redimir el último día gratis se elimina la tarjeta y los datos del cliente.
-- Un negocio nuevo arranca con «Plan 10 visitas» (+1 de regalo), editable por su admin.
+- Cada compra = 1 estrella (el cliente escanea el QR de estrellas o la etiqueta NFC). Varias por día; pausa de 3 min entre estrellas.
+- Las estrellas se acumulan. La tarjeta muestra el avance al siguiente premio visible.
+- En «Canjear» el admin escanea el QR del cliente y canjea un premio: se descuentan sus estrellas y la tarjeta sigue activa.
+- Los días de regalo que quedaron de los planes se pueden seguir redimiendo.
 
 ## Archivos clave
 - `src/Super.jsx` superadmin · `src/Admin.jsx` admin del negocio · `src/Customer.jsx` cliente · `src/Card.jsx` tarjeta

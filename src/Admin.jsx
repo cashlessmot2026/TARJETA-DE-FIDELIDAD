@@ -38,7 +38,7 @@ function Gate({ slug, onOk }) {
   )
 }
 
-const TABS = [['panel', 'Panel'], ['estrellas', 'QR de estrellas'], ['clientes', 'Clientes'], ['promos', 'Planes'], ['premios', 'Premios'], ['validar', 'Redimir'], ['qr', 'QR de registro'], ['ajustes', 'Ajustes']]
+const TABS = [['panel', 'Panel'], ['estrellas', 'QR de estrellas'], ['clientes', 'Clientes'], ['premios', 'Premios'], ['validar', 'Canjear'], ['qr', 'QR de registro'], ['ajustes', 'Ajustes']]
 
 function Dash({ pin, biz, onExit }) {
   const [tab, setTab] = useState('panel')
@@ -53,7 +53,6 @@ function Dash({ pin, biz, onExit }) {
         {tab === 'panel' && <Panel pin={pin} />}
         {tab === 'estrellas' && <Estrellas pin={pin} biz={biz} />}
         {tab === 'clientes' && <Clientes pin={pin} />}
-        {tab === 'promos' && <Promos pin={pin} />}
         {tab === 'premios' && <Premios pin={pin} />}
         {tab === 'validar' && <Validar pin={pin} />}
         {tab === 'qr' && <><h1 className="h1 no-print">Código QR de registro</h1><p className="muted no-print">Imprime este afiche y ponlo en tu local. Tus clientes lo escanean para crear su tarjeta.</p><Poster biz={biz} /></>}
@@ -118,7 +117,7 @@ function Clientes({ pin }) {
   const [list, reload, err] = useRpc('admin_customers', pin)
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(null)
-  // «+» suma un día con la lógica del plan (sin la pausa de 3 min); «−» solo quita una estrella.
+  // «+» suma una estrella sin la pausa de 3 min; «−» quita una.
   const adj = async (c, delta) => {
     setBusy(c.id)
     try {
@@ -146,61 +145,18 @@ function Clientes({ pin }) {
         {list && rows.length === 0 && <p className="muted">No hay clientes que coincidan.</p>}
         {rows.map((c) => (
           <div className="trow" key={c.id}>
-            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}{c.plan_title ? ` · ${c.plan_title}` : ''}</span></div>
+            <div className="who"><b>{c.name}</b><span>{c.phone || 'Sin teléfono'} · {c.code}</span></div>
             <div className="actions">
               <button className="link danger" disabled={busy === c.id} onClick={() => del(c)}>Eliminar</button>
             </div>
             <time>{c.last_visit ? `Última visita ${when(c.last_visit)}` : 'Sin visitas'}</time>
             <div className="stepper">
               <button disabled={busy === c.id || c.stars < 1} onClick={() => adj(c, -1)} aria-label={`Quitar una estrella a ${c.name}`}>−</button>
-              <b>{c.stars} d · {c.bonus_days} 🎁</b>
+              <b>{c.stars} ★{c.bonus_days > 0 ? ` · ${c.bonus_days} 🎁` : ''}</b>
               <button disabled={busy === c.id} onClick={() => adj(c, 1)} aria-label={`Dar una estrella a ${c.name}`}>+</button>
             </div>
           </div>
         ))}
-      </div>
-    </>
-  )
-}
-
-function Promos({ pin }) {
-  const [list, reload, err] = useRpc('admin_promos', pin)
-  const blank = { id: null, title: '', description: '', stars_required: 7, reward_days: 1, active: true }
-  const [f, setF] = useState(blank)
-  const save = async (e) => {
-    e.preventDefault()
-    try {
-      await rpc('admin_save_promo', { ...pin, p_id: f.id, p_title: f.title, p_desc: f.description, p_stars: Number(f.stars_required), p_active: f.active, p_reward: Number(f.reward_days) })
-      setF(blank); reload()
-    } catch (x) { alert(x.message) }
-  }
-  const del = async (p) => { if (confirm(`¿Eliminar «${p.title}»?`)) { await rpc('admin_delete_promo', { ...pin, p_id: p.id }); reload() } }
-  return (
-    <>
-      <h1 className="h1">Planes</h1>
-      {err && <p className="err">{err}</p>}
-      <form className="panel form grid" onSubmit={save}>
-        <h2>{f.id ? 'Editar plan' : 'Nuevo plan'}</h2>
-        <label>Título<input required value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="2x1 en bebidas" /></label>
-        <label>Días del plan (estrellas)<input required type="number" min="1" value={f.stars_required} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
-        <label>Días de regalo al completar<input required type="number" min="0" value={f.reward_days} onChange={(e) => setF({ ...f, reward_days: e.target.value })} /></label>
-        <label className="wide">Descripción<input value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Válido de lunes a jueves" /></label>
-        <label className="check"><input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />Visible para los clientes</label>
-        <div className="actions">
-          <button className="btn primary">{f.id ? 'Guardar cambios' : 'Crear promoción'}</button>
-          {f.id && <button type="button" className="btn" onClick={() => setF(blank)}>Cancelar</button>}
-        </div>
-      </form>
-      <div className="panel">
-        <ul className="promos">
-          {(list || []).map((p) => (
-            <li key={p.id} className={p.active ? 'ok' : 'off'}>
-              <div><b>{p.title}</b><span>{p.description}</span></div>
-              <em>{p.stars_required} días · +{p.reward_days} regalo{p.active ? '' : ' · oculta'}</em>
-              <div className="actions"><button className="link" onClick={() => setF(p)}>Editar</button><button className="link danger" onClick={() => del(p)}>Eliminar</button></div>
-            </li>
-          ))}
-        </ul>
       </div>
     </>
   )
@@ -222,12 +178,12 @@ function Premios({ pin }) {
   return (
     <>
       <h1 className="h1">Premios</h1>
-      <p className="muted">Los clientes solo ven los premios que autorices.</p>
+      <p className="muted">Cada compra suma 1 estrella. Los clientes ven y canjean solo los premios que autorices; al canjear se descuentan las estrellas del premio.</p>
       {err && <p className="err">{err}</p>}
       <form className="panel form grid" onSubmit={save}>
         <h2>{f.id ? 'Editar premio' : 'Nuevo premio'}</h2>
         <label>Premio<input required minLength={2} value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Camiseta del gimnasio" /></label>
-        <label>Estrellas necesarias <small>(opcional)</small><input type="number" min="1" value={f.stars_required ?? ''} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
+        <label>Estrellas necesarias<input required type="number" min="1" value={f.stars_required ?? ''} onChange={(e) => setF({ ...f, stars_required: e.target.value })} /></label>
         <label className="wide">Descripción<input value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Válido hasta agotar existencias" /></label>
         <label className="check"><input type="checkbox" checked={f.visible} onChange={(e) => setF({ ...f, visible: e.target.checked })} />Autorizado: visible para los clientes</label>
         <div className="actions">
@@ -313,7 +269,7 @@ function Estrellas({ pin, biz }) {
   )
 }
 
-// Redimir: el admin escanea el QR de la tarjeta del cliente para usar su día gratis.
+// Canjear: el admin escanea el QR de la tarjeta del cliente y canjea un premio (o un día gratis pendiente).
 function Validar({ pin }) {
   const [mode, setMode] = useState('qr')
   const [manual, setManual] = useState('')
@@ -322,7 +278,8 @@ function Validar({ pin }) {
   const find = useCallback(async (code) => {
     try {
       const l = await rpc('admin_lookup', { ...pin, p_code: code })
-      setRes({ ok: true, ...l, note: l.bonus_days > 0 ? 'Este cliente tiene día gratis disponible.' : 'Este cliente aún no tiene días de regalo.' })
+      const can = l.rewards.filter((r) => r.stars_required <= l.stars)
+      setRes({ ok: true, ...l, note: can.length || l.bonus_days > 0 ? 'Tiene premios para canjear.' : 'Aún no alcanza ningún premio.' })
       navigator.vibrate?.(80)
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }, [pin])
@@ -330,13 +287,20 @@ function Validar({ pin }) {
   const useGift = async () => {
     try {
       const r = await rpc('admin_use_bonus_day', { ...pin, p_code: res.code })
-      setRes({ ok: true, ...r, note: r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.` })
+      setRes({ ...res, ...r, note: r.closed ? 'Día gratis redimido. La tarjeta y los datos del cliente fueron eliminados.' : `Día gratis redimido. Le quedan ${r.bonus_days}.` })
+    } catch (e) { setRes({ ok: false, msg: e.message }) }
+  }
+  const redeem = async (rw) => {
+    if (!confirm(`¿Canjear «${rw.title}»? Se descuentan ${rw.stars_required} estrellas.`)) return
+    try {
+      const r = await rpc('admin_redeem_reward', { ...pin, p_code: res.code, p_reward: rw.id })
+      setRes({ ...res, ...r, note: `«${r.reward}» canjeado. Le quedan ${r.stars} estrellas.` })
     } catch (e) { setRes({ ok: false, msg: e.message }) }
   }
 
   return (
     <>
-      <h1 className="h1">Redimir día gratis</h1>
+      <h1 className="h1">Canjear premios</h1>
       <p className="muted">Escanea el QR de la tarjeta del cliente. Las estrellas ya no se suman aquí: el cliente las suma con el QR de estrellas.</p>
       <div className="seg" role="tablist">
         {[['qr', 'Escanear QR'], ['code', 'Escribir código']].map(([k, l]) =>
@@ -360,8 +324,17 @@ function Validar({ pin }) {
               <div>
                 <b>{res.name}</b>
                 <span>{res.note}</span>
-                <span>{res.stars} estrellas · {res.bonus_days} de regalo disponibles</span>
-                {res.bonus_days > 0 && !res.closed && <div className="actions"><button className="btn primary" onClick={useGift}>Redimir día gratis</button></div>}
+                <span>{res.stars} estrellas{res.bonus_days > 0 ? ` · ${res.bonus_days} días de regalo` : ''}</span>
+                {!res.closed && (
+                  <div className="actions">
+                    {(res.rewards || []).map((rw) => (
+                      <button key={rw.id} className={`btn${rw.stars_required <= res.stars ? ' primary' : ''}`} disabled={rw.stars_required > res.stars} onClick={() => redeem(rw)}>
+                        Canjear «{rw.title}» · {rw.stars_required} ★
+                      </button>
+                    ))}
+                    {res.bonus_days > 0 && <button className="btn primary" onClick={useGift}>Redimir día gratis</button>}
+                  </div>
+                )}
               </div>
             </>
           ) : <div><b>No se pudo validar</b><span>{res.msg}</span></div>}

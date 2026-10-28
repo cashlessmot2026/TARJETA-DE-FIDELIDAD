@@ -14,7 +14,8 @@ const spaced = (code) => (code || '').replace(/(.{4})/g, '$1 ').trim()
 /** Tarjeta tipo crédito: frente = estrellas, dorso = fechas de compra + QR. */
 export default function Card({ card, flipped, onFlip, justStamped }) {
   const { business, name, code, stars, goal, visits, color } = card
-  const ready = (card.bonus_days || 0) > 0
+  const gift = (card.bonus_days || 0) > 0
+  const ready = gift || !!card.can_redeem
   const slots = Math.max(goal, 1)
   const filled = Math.min(stars, slots)
   const dated = visits.filter((v) => v.delta > 0)
@@ -38,8 +39,8 @@ export default function Card({ card, flipped, onFlip, justStamped }) {
           {ready ? (
             <span className="redeem">
               <span className="redeem-txt">
-                <b>¡Ya tienes tu día gratis disponible!</b>
-                <i>Redímelo mostrando este QR en recepción.</i>
+                <b>{gift ? '¡Ya tienes tu día gratis disponible!' : '¡Ya tienes un premio disponible!'}</b>
+                <i>Canjéalo mostrando este QR en caja.</i>
               </span>
               <span className="redeem-qr">
                 <QRCodeSVG value={`FID:${code}`} size={128} marginSize={3} bgColor="#FFFFFF" fgColor="#000000" level="M" />

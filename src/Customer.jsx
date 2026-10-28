@@ -80,7 +80,7 @@ function MyCards() {
             <a href={`#/c/${x.token}`} className="minicard" style={{ '--brand': x.color }}>
               {x.logo ? <img src={x.logo} alt="" /> : <span className="ph" aria-hidden>★</span>}
               <span><b>{x.business}</b><small>{x.name}</small></span>
-              <em>{x.bonus_days > 0 ? '🎁 regalo' : `${Math.min(x.stars, x.goal)}/${x.goal} ★`}</em>
+              <em>{x.bonus_days > 0 || x.can_redeem ? '🎁 premio' : `${Math.min(x.stars, x.goal)}/${x.goal} ★`}</em>
             </a>
           </li>
         ))}
@@ -95,16 +95,12 @@ function Register({ biz, onDone }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [info, setInfo] = useState(undefined)
-  const [plan, setPlan] = useState(null)
-  const plans = info?.plans || []
-  useEffect(() => {
-    bizInfo(biz).then((b) => { setInfo(b); if (b?.plans?.length) setPlan(b.plans[0].id) })
-  }, [biz])
+  useEffect(() => { bizInfo(biz).then(setInfo) }, [biz])
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setErr('')
     try {
-      const r = await rpc('app_register', { p_biz: biz, p_name: name, p_phone: phone, p_plan: plan })
+      const r = await rpc('app_register', { p_biz: biz, p_name: name, p_phone: phone })
       onDone(r.token)
     } catch (ex) { setErr(ex.message); setBusy(false) }
   }
@@ -119,21 +115,10 @@ function Register({ biz, onDone }) {
     <main className="shell" style={{ '--brand': info.color }}>
       {info.logo && <img className="reg-logo" src={info.logo} alt={info.name} />}
       <h1 className="hero">Tu tarjeta de {info.name}</h1>
-      <p className="lede">Regístrate una vez. En cada visita escanea el QR de estrellas del negocio y suma una estrella.</p>
+      <p className="lede">Regístrate una vez. En cada compra escanea el QR de estrellas del negocio, suma estrellas y cámbialas por premios.</p>
       <form className="panel form" onSubmit={submit}>
         <label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required minLength={2} placeholder="Ana Pérez" /></label>
         <label>Teléfono <small>(lo usas para sumar estrellas si no abres la app)</small><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" required minLength={7} placeholder="300 123 4567" /></label>
-        {plans.length > 0 && (
-          <fieldset className="plans">
-            <legend>Elige tu plan</legend>
-            {plans.map((p) => (
-              <label key={p.id} className={`plan${plan === p.id ? ' on' : ''}`}>
-                <input type="radio" name="plan" checked={plan === p.id} onChange={() => setPlan(p.id)} />
-                <span><b>{p.title}</b><small>{p.description || `${p.stars_required} días pagados`} · {p.reward_days} {p.reward_days === 1 ? 'día' : 'días'} de regalo</small></span>
-              </label>
-            ))}
-          </fieldset>
-        )}
         {err && <p className="err">{err}</p>}
         <button className="btn primary" disabled={busy}>{busy ? 'Creando tarjeta…' : 'Crear mi tarjeta'}</button>
       </form>
@@ -150,7 +135,6 @@ function Wallet({ token, fresh, onReset }) {
   const [flipped, setFlipped] = useState(false)
   const [stamped, setStamped] = useState(false)
   const [msg, setMsg] = useState('')
-  const [skipUp, setSkipUp] = useState(false)
   const prev = useRef(null)
 
   const refresh = useCallback(async () => {
@@ -184,7 +168,7 @@ function Wallet({ token, fresh, onReset }) {
 
   if (!card) return <main className="shell"><p className="lede">Cargando tu tarjeta…</p></main>
 
-  const next = card.promos.find((p) => p.stars_required > card.stars)
+  const next = card.rewards.find((r) => r.stars_required > card.stars)
   const link = `${location.origin}${location.pathname}#/c/${token}`
   const share = async () => {
     try {
@@ -206,36 +190,29 @@ function Wallet({ token, fresh, onReset }) {
       <ScanButton />
 
       <p className="hint">
-        {card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR para redimirlo; al usarlo tu tarjeta se cierra.' : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</> : card.promos.length ? 'Ya puedes canjear cualquier premio.' : 'Escanea el QR de estrellas del negocio para sumar.'}
+        {card.can_redeem ? <>¡Ya tienes un premio! Muestra el QR de tu tarjeta en caja para canjearlo.{next && <> Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</>}</>
+          : card.bonus_days > 0 ? '¡Tienes un día gratis! Muestra el QR en caja para redimirlo.'
+          : next ? <>Te faltan <b>{next.stars_required - card.stars}</b> para «{next.title}».</>
+          : 'Escanea el QR de estrellas del negocio en cada compra para sumar.'}
       </p>
 
       {card.has_phone === false && <PhoneAsk token={token} onDone={refresh} />}
 
-      {card.can_upgrade && card.next_plan && !skipUp && (
-        <section className="panel upgrade">
-          <h2>¡Completaste tu plan de {card.plan.days} días!</h2>
-          <p className="muted">¿Quieres seguir con el plan de <b>{card.next_plan.days} días</b>? Al completarlo recibes {card.next_plan.reward_days} {card.next_plan.reward_days === 1 ? 'día' : 'días'} de regalo en total.</p>
-          <div className="actions">
-            <button className="btn primary" onClick={async () => { try { await rpc('app_choose_plan', { p_token: token, p_plan: card.next_plan.id }); refresh() } catch (e) { setMsg(e.message) } }}>Sí, pasar al plan de {card.next_plan.days} días</button>
-            <button className="btn" onClick={() => setSkipUp(true)}>No, repetir {card.plan.days} días</button>
-          </div>
+      {card.bonus_days > 0 && (
+        <section className="panel">
+          <h2>Días de regalo</h2>
+          <p><b>{card.bonus_days}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}. Muestra el QR en caja para usarlo.</p>
         </section>
       )}
-
-      <section className="panel">
-        <h2>Días de regalo</h2>
-        <p className="muted">Cada día pagado suma una estrella. Tu plan: {card.plan?.title} — al completar {card.plan?.days} días recibes {card.plan?.reward_days} de regalo.</p>
-        <p><b>{card.bonus_days || 0}</b> {card.bonus_days === 1 ? 'día disponible' : 'días disponibles'}</p>
-      </section>
 
       {card.rewards?.length > 0 && (
         <section className="panel">
           <h2>Premios</h2>
           <ul className="promos">
             {card.rewards.map((r) => (
-              <li key={r.id} className={r.stars_required && card.stars >= r.stars_required ? 'ok' : ''}>
-                <div><b>{r.title}</b><span>{r.description}</span></div>
-                {r.stars_required && <em>{Math.min(card.stars, r.stars_required)}/{r.stars_required} ★</em>}
+              <li key={r.id} className={card.stars >= r.stars_required ? 'ok' : ''}>
+                <div><b>{r.title}</b><span>{card.stars >= r.stars_required ? '¡Disponible! Muestra tu QR en caja.' : r.description}</span></div>
+                <em>{Math.min(card.stars, r.stars_required)}/{r.stars_required} ★</em>
               </li>
             ))}
           </ul>
@@ -398,8 +375,9 @@ function Checkin({ biz, code, via }) {
             <svg viewBox="0 0 120 120" aria-hidden><circle cx="60" cy="60" r="46" className="ring" /><path d="M38 62l15 15 30-34" className="tick" /></svg>
             <div>
               <b>¡+1 estrella, {st.r.name.split(' ')[0]}!</b>
-              <span>Visita {st.r.day} de {st.r.target}{st.r.gift ? ` · ¡ganaste ${st.r.gift} de regalo!` : ''}</span>
-              {st.r.bonus_days > 0 && <span>Tienes {st.r.bonus_days} de regalo disponible{st.r.bonus_days === 1 ? '' : 's'}.</span>}
+              <span>Llevas {st.r.stars} {st.r.stars === 1 ? 'estrella' : 'estrellas'}.</span>
+              {st.r.ready?.length > 0 && <span>🎁 ¡Ya puedes canjear: {st.r.ready.join(', ')}! Muestra tu QR en caja.</span>}
+              {st.r.next && <span>Te faltan {st.r.next.missing} para «{st.r.next.title}».</span>}
             </div>
           </div>
           {open || <p className="muted">Abre tu tarjeta desde la app para verla.</p>}
