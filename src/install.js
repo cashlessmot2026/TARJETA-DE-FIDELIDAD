@@ -16,7 +16,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 const ua = navigator.userAgent
 export const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
-const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+export const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
 // Navegadores dentro de otras apps (Instagram, Facebook, WhatsApp…) no permiten instalar.
 const isInApp = /FBAN|FBAV|Instagram|Line\/|WhatsApp|; wv\)/.test(ua)
 

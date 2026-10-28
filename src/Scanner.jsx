@@ -59,6 +59,28 @@ export function QrScanner({ onCode, active, parse = parseCode }) {
 
 export const nfcSupported = () => typeof window !== 'undefined' && 'NDEFReader' in window
 
+/** Escucha etiquetas NFC mientras `enabled` (Chrome para Android) y entrega el texto o enlace grabado. */
+export function useNfcText(onText, enabled) {
+  const [state, setState] = useState(nfcSupported() ? 'idle' : 'unsupported')
+  const cb = useRef(onText)
+  cb.current = onText
+  useEffect(() => {
+    if (!enabled || !nfcSupported()) return
+    const ctrl = new AbortController()
+    const reader = new window.NDEFReader()
+    reader.onreading = (e) => {
+      for (const r of e.message.records) {
+        if (r.recordType !== 'url' && r.recordType !== 'text') continue
+        try { return cb.current(new TextDecoder(r.encoding || 'utf-8').decode(r.data)) } catch {}
+      }
+      setState('unknown')
+    }
+    reader.scan({ signal: ctrl.signal }).then(() => setState('listening')).catch(() => setState('denied'))
+    return () => ctrl.abort()
+  }, [enabled])
+  return state
+}
+
 /** Graba un enlace en una etiqueta NFC (Chrome para Android). */
 export async function writeNfcUrl(url) {
   const w = new window.NDEFReader()

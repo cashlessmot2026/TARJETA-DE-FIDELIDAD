@@ -2,8 +2,8 @@ import Fireworks from './Fireworks.jsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { rpc, supabase } from './supabase.js'
 import Card from './Card.jsx'
-import { QrScanner, parseVisit } from './Scanner.jsx'
-import { keepTokenInUrl, useInstall } from './install.js'
+import { QrScanner, parseVisit, useNfcText } from './Scanner.jsx'
+import { isIos, keepTokenInUrl, useInstall } from './install.js'
 import { cardForBiz, loadCards, removeCard, saveCard } from './cards.js'
 
 const go = (hash) => location.replace(hash)
@@ -268,11 +268,12 @@ function InstallSheet({ install, welcome, onClose }) {
   )
 }
 
-// Abre la cámara para leer el QR de estrellas del negocio y lleva a #/v/<negocio>/<código>.
+// Lee el QR de estrellas (cámara) o la etiqueta NFC del negocio y lleva a #/v/<negocio>/<código>.
 function ScanButton() {
   const [open, setOpen] = useState(false)
   const [bad, setBad] = useState(false)
   const close = () => { setOpen(false); setBad(false) }
+  const nfc = useNfcText((t) => { const r = parseVisit(t); if (r) go(`#/${r}/nfc`); else setBad(true) }, open)
   return (
     <>
       <button className="btn primary big" onClick={() => setOpen(true)}>★ Sumar estrella</button>
@@ -280,11 +281,16 @@ function ScanButton() {
         <div className="sheet-bg" onClick={close}>
           <section className="sheet" role="dialog" aria-modal="true" aria-labelledby="scan-title" onClick={(e) => e.stopPropagation()}>
             <h2 id="scan-title">Sumar estrella</h2>
-            <p className="muted">Apunta la cámara al QR de estrellas del negocio.</p>
+            <p className="muted">Apunta la cámara al QR de estrellas del negocio{nfc === 'listening' ? ' o acerca la parte de atrás del teléfono a su etiqueta NFC' : ''}.</p>
             <div className="full">
               <QrScanner active parse={(t) => parseVisit(t) || (setBad(true), null)} onCode={(r) => go(`#/${r}`)} />
             </div>
-            {bad && <p className="err">Ese no es un QR de estrellas. Busca el que dice «Escanea y suma tu estrella».</p>}
+            {nfc === 'listening' && <p className="nfc-live"><span className="dot" aria-hidden /> NFC activo: acerca el teléfono a la etiqueta</p>}
+            {nfc === 'denied' && <p className="muted">Para usar la etiqueta NFC, permite «Dispositivos NFC» en los ajustes del sitio, o escanea el QR.</p>}
+            {nfc === 'unsupported' && <p className="muted">{isIos
+              ? 'Con etiqueta NFC: cierra esta ventana y acerca la parte de arriba del iPhone a la etiqueta; toca el aviso que aparece.'
+              : 'Con etiqueta NFC: activa el NFC del teléfono y acércalo a la etiqueta; se abrirá solo.'}</p>}
+            {bad && <p className="err">Ese no es un código de estrellas. Busca el QR que dice «Escanea y suma tu estrella».</p>}
             <button className="link" onClick={close}>Cancelar</button>
           </section>
         </div>
