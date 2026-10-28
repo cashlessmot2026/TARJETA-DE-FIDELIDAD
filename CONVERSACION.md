@@ -1,6 +1,6 @@
 # Tarjetas de fidelidad (multi-negocio) · Resumen para continuar
 
-Última actualización: 27 de octubre de 2026
+Última actualización: 28 de octubre de 2026
 
 - **Repo:** https://github.com/cashlessmot2026/TARJETA-DE-FIDELIDAD (rama `main`; GitHub Actions publica en GitHub Pages en cada push)
 - **Dominio:** `fidelizacion.shop` (GoDaddy, comprado el 27-oct-2026). Mientras se activa: https://cashlessmot2026.github.io/TARJETA-DE-FIDELIDAD/
@@ -13,9 +13,10 @@
 | Ruta | Para quién | Qué hace |
 |---|---|---|
 | `#/super` | Superadmin | Crea/edita negocios: nombre, correo, logo (el color de la tarjeta sale automático del logo), enlace, PIN del admin, activo. Vista previa en vivo de la tarjeta. Descarga afiche/QR y copia el enlace del admin. |
-| `#/admin/<negocio>` | Admin del negocio | Panel, Clientes (solo los suyos), Planes, Premios, Validar (QR/NFC/código), Código QR (afiche), Ajustes (color y PIN). |
+| `#/admin/<negocio>` | Admin del negocio | Panel, QR de estrellas (afiche, grabar NFC, regenerar), Clientes, Planes, Premios, Redimir (día gratis), QR de registro, Ajustes. |
 | `#/r/<negocio>` | Cliente | Registro en ese negocio (es lo que abre el QR del afiche). Si ya tiene tarjeta de ese negocio, la abre. |
-| `#/c/<token>` | Cliente | Su tarjeta. |
+| `#/c/<token>` | Cliente | Su tarjeta (botón «Sumar estrella»). |
+| `#/v/<negocio>/<código>[/nfc]` | Cliente | Suma la estrella (QR de estrellas o etiqueta NFC). Si el navegador no tiene la tarjeta, pide el teléfono. |
 | `#/` | Cliente | «Mis tarjetas» (una por negocio; si tiene una sola, la abre directo). |
 | `/privacidad/` | Público (oculta, `noindex`) | Política de privacidad (Ley 1581 de 2012, Colombia). |
 
@@ -25,6 +26,7 @@
 - Google Wallet: **pospuesto** hasta que Google apruebe la cuenta. El botón está oculto.
 - QR: afiche imprimible/PDF + PNG, descargable por el superadmin y por el admin del negocio.
 - Varios negocios en un mismo teléfono: lista «Mis tarjetas».
+- **Estrellas:** las suma el cliente escaneando el QR de estrellas del negocio (código fijo, regenerable) o tocando su etiqueta NFC. El admin ya no escanea al cliente salvo para redimir el día gratis. Teléfono obligatorio y único por negocio. Diseño: `docs/superpowers/specs/2026-10-28-estrellas-por-visita-design.md`.
 - Premios: solo se muestran al cliente cuando el admin los autoriza (`visible`).
 - Al registrarse, el cliente ve una ventana para instalar la tarjeta como app (PWA). Android: botón «Descargar app»; iPhone: instrucciones (Compartir → Agregar a inicio); navegadores de WhatsApp/Instagram: pide abrir en Chrome.
 
@@ -32,14 +34,15 @@
 Para un proyecto nuevo, en Supabase → SQL Editor ejecutar **en orden**:
 1. `supabase/schema.sql`
 2. `supabase/multinegocio.sql`
+3. `supabase/visitas.sql`
 
 Ya están aplicados en `shrkfzuxpmwkyyqjzcmb` (verificado: `super_check` responde).
 
 Tablas: `businesses`, `customers` (con `business_id`), `visits`, `promotions` (= planes, con `business_id`), `rewards` (premios, con `business_id` y `visible`), `settings` (`super_pin_hash`, etc.).
 
 Funciones RPC:
-- **Cliente:** `app_business(slug)`, `app_register(biz, name, phone, plan)`, `app_get_card(token)`, `app_cards(tokens[])`, `app_choose_plan(token, plan)`.
-- **Admin (todas reciben `p_biz`, `p_pin`):** `admin_check`, `admin_overview`, `admin_customers`, `admin_add_stars`, `admin_assign_nfc`, `admin_lookup`, `admin_confirm_day`, `admin_use_bonus_day`, `admin_delete_customer`, `admin_promos`, `admin_save_promo`, `admin_delete_promo`, `admin_rewards`, `admin_save_reward`, `admin_set_reward_visible`, `admin_delete_reward`, `admin_save_settings`.
+- **Cliente:** `app_business(slug)`, `app_register(biz, name, phone, plan)`, `app_get_card(token)`, `app_cards(tokens[])`, `app_choose_plan(token, plan)`, `app_checkin(token, biz, code, via)`, `app_checkin_phone(biz, code, phone, via)`, `app_set_phone(token, phone)`.
+- **Admin (todas reciben `p_biz`, `p_pin`):** `admin_check`, `admin_overview`, `admin_customers`, `admin_add_stars`, `admin_assign_nfc`, `admin_lookup`, `admin_confirm_day`, `admin_use_bonus_day`, `admin_delete_customer`, `admin_promos`, `admin_save_promo`, `admin_delete_promo`, `admin_rewards`, `admin_save_reward`, `admin_set_reward_visible`, `admin_delete_reward`, `admin_save_settings`, `admin_visit_code`, `admin_regen_visit_code`.
 - **Superadmin:** `super_check`, `super_businesses`, `super_save_business`, `super_set_pin`.
 
 ## Reglas de negocio
@@ -67,7 +70,7 @@ Funciones RPC:
 ## Pendientes
 1. Cambiar el PIN del superadmin y el del negocio `principal`.
 2. Terminar el DNS (3 registros A) y activar HTTPS en GitHub Pages.
-3. Probar en celulares reales: registro por QR, instalación como app (Android e iPhone), validación QR/NFC, afiche impreso.
+3. Probar en celulares reales: registro, «Sumar estrella» con el QR de estrellas, etiqueta NFC del negocio (Android e iPhone), check-in por teléfono en iPhone con la app instalada, redimir día gratis.
 4. Cambiar los textos de «días» («Días de regalo», «días pagados») por «visitas/premios» para negocios que no son gimnasio.
 5. Google Wallet por negocio (cuando Google apruebe la cuenta).
 6. Opcional: invitación por correo al admin del negocio; migrar datos del proyecto viejo si hace falta.
