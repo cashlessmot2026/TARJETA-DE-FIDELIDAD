@@ -18,7 +18,7 @@ que ese código es el vigente del negocio. El QR de registro (`#/r/<negocio>`) n
 - **Teléfono obligatorio** al registrarse y único por negocio (se comparan los últimos 10 dígitos).
   A quien no tenga teléfono se le pide al abrir su tarjeta.
 - Se pueden sumar varias estrellas en el mismo día (cambio del 28-oct: se quitó el límite de 12 h). Solo hay una pausa
-  de 5 min entre estrellas para no contar doble la misma lectura. Días de regalo al completar el plan.
+  de 3 min entre estrellas para no contar doble la misma lectura. Días de regalo al completar el plan.
 - Admin: pestaña «QR de estrellas» (afiche, PNG, copiar enlace, grabar etiqueta NFC, regenerar).
   «Validar» queda como «Redimir» (solo día gratis). Se quita «Asignar NFC» a clientes.
   En Clientes, «+» suma una estrella manual con la lógica del plan (sin pausa).
@@ -33,4 +33,4 @@ que ese código es el vigente del negocio. El QR de registro (`#/r/<negocio>`) n
 - `app_register` exige teléfono único; `app_get_card` devuelve `has_phone`; `super_businesses` devuelve `visit_code`.
 
 ## Riesgo aceptado
-Un código fijo se puede fotografiar o guardar. Sin límite diario, quien tenga el código puede sumar una estrella cada 5 min; se mitiga con el botón «Regenerar».
+Un código fijo se puede fotografiar o guardar. Sin límite diario, quien tenga el código puede sumar una estrella cada 3 min; se mitiga con el botón «Regenerar».

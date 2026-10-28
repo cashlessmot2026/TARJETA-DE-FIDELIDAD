@@ -46,7 +46,7 @@ Funciones RPC:
 - **Superadmin:** `super_check`, `super_businesses`, `super_save_business`, `super_set_pin`.
 
 ## Reglas de negocio
-- Cada compra = 1 estrella. Se pueden sumar varias en el mismo día; solo hay una pausa de 5 min entre estrellas (evita contar doble la misma lectura).
+- Cada compra = 1 estrella. Se pueden sumar varias en el mismo día; solo hay una pausa de 3 min entre estrellas (evita contar doble la misma lectura).
 - Al llegar a la meta del plan se suman los días de regalo del plan.
 - Al redimir el último día gratis se elimina la tarjeta y los datos del cliente.
 - Un negocio nuevo arranca con «Plan 10 visitas» (+1 de regalo), editable por su admin.

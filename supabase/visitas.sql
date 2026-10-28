@@ -23,7 +23,7 @@ $$;
 create index if not exists customers_phone_idx on public.customers(business_id, public._phone(phone));
 
 -- Suma una estrella según el plan. Se puede sumar varias veces al día; p_strict solo evita contar doble
--- la misma lectura (pausa de 5 min). El ajuste manual del admin no tiene pausa.
+-- la misma lectura (pausa de 3 min). El ajuste manual del admin no tiene pausa.
 create or replace function public._checkin(p_v public.customers, p_via text, p_strict boolean default true)
 returns json language plpgsql security definer set search_path = public as $$
 declare v customers := p_v; pr promotions; last_at timestamptz; n int; gift int := 0; cg int;
@@ -31,9 +31,9 @@ begin
   if p_strict then
     select max(created_at) into last_at from visits
      where customer_id = v.id and delta > 0 and kind in ('scan', 'nfc', 'day', 'qr', 'phone');
-    if last_at is not null and last_at > now() - interval '5 minutes' then
+    if last_at is not null and last_at > now() - interval '3 minutes' then
       raise exception 'Esta estrella ya se sumó hace un momento. Podrás sumar otra en % min',
-        ceil(extract(epoch from last_at + interval '5 minutes' - now()) / 60)::int;
+        ceil(extract(epoch from last_at + interval '3 minutes' - now()) / 60)::int;
     end if;
   end if;
   pr := _plan_of(v.business_id, v.plan_id);
